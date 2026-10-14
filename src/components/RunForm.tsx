@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "./LocaleProvider";
 import type { CitedSource, TraceStep } from "@/lib/db";
+import { TraceList } from "./TraceList";
 import {
   EmptyState,
   areaClass,
@@ -213,21 +214,9 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
             {d.trace.title}
           </h2>
-          <ul className="space-y-1.5" aria-live="polite">
-            {rows.map((row) => (
-              <li
-                key={row.key}
-                className="flex items-baseline gap-2.5 rounded-md border border-border px-3 py-2 text-sm"
-              >
-                <span className={`shrink-0 text-xs font-medium ${tone(row.kind)}`}>
-                  {row.label}
-                </span>
-                <span className="min-w-0 truncate text-muted" title={row.detail}>
-                  {row.detail}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div aria-live="polite">
+            <TraceList rows={rows} />
+          </div>
         </div>
       )}
 
@@ -275,24 +264,6 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
       )}
     </div>
   );
-}
-
-function tone(kind: TraceRow["kind"]): string {
-  switch (kind) {
-    case "plan":
-      return "text-accent";
-    case "search":
-    case "fetch":
-      return "text-foreground";
-    case "skip-blocked":
-    case "skip-repeat":
-    case "warning":
-      return "text-warning";
-    case "tool":
-      return "text-muted";
-    default:
-      return "text-muted";
-  }
 }
 
 function errorMessage(
