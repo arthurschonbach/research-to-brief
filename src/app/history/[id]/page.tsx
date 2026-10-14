@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { getDictionary, format, formatDateTime } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { getRun, parseCited, parseSteps } from "@/lib/db";
@@ -43,10 +42,23 @@ function parseStringArray(value: string): string[] {
 export default async function Page({ params }: PageProps<"/history/[id]">) {
   const { id } = await params;
   const run = getRun(id);
-  if (!run) notFound();
 
   const locale = await getLocale();
   const d = getDictionary(locale);
+
+  // Demo deployments (Vercel) keep sqlite in instance-local /tmp: a run
+  // saved on one instance 404s on another. Explain instead of a dead end.
+  if (!run) {
+    return (
+      <div className="space-y-8">
+        <Link href="/history" className={btnGhost}>
+          {d.history.back}
+        </Link>
+        <EmptyState>{`${d.history.notFound} — ${d.history.notFoundHint}`}</EmptyState>
+      </div>
+    );
+  }
+
   const steps = parseSteps(run.steps);
   const cited = parseCited(run.cited);
   const plan = parseStringArray(run.plan);

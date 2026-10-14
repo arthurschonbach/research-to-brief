@@ -61,6 +61,8 @@ const en = {
     statusStopped: "stopped",
     statusFailed: "failed",
     statusRunning: "running",
+    notFound: "Run not found",
+    notFoundHint: "Demo history is ephemeral — instances don't share it. Load the sample run to see a full trace.",
   },
   detail: {
     planLabel: "Plan",
@@ -132,6 +134,8 @@ const fr: Dictionary = {
     statusStopped: "arrêté",
     statusFailed: "échoué",
     statusRunning: "en cours",
+    notFound: "Run introuvable",
+    notFoundHint: "L'historique de démo est éphémère — les instances ne le partagent pas. Chargez l'exemple pour voir une trace complète.",
   },
   detail: {
     planLabel: "Plan",
