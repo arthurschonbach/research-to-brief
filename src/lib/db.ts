@@ -69,6 +69,35 @@ export function getRun(id: string): RunRow | undefined {
     | undefined;
 }
 
+export function seedSampleRun(input: {
+  question: string;
+  maxSteps: number;
+  blocklist: string;
+  plan: string;
+  steps: string;
+  brief: string;
+  cited: string;
+  model: string | null;
+}): string {
+  db.prepare("DELETE FROM runs WHERE question = ?").run(input.question);
+  const id = crypto.randomUUID();
+  db.prepare(
+    "INSERT INTO runs (id, question, status, max_steps, blocklist, plan, steps, brief, cited, model, latency_ms, error, created_at) VALUES (?, ?, 'done', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)",
+  ).run(
+    id,
+    input.question,
+    input.maxSteps,
+    input.blocklist,
+    input.plan,
+    input.steps,
+    input.brief,
+    input.cited,
+    input.model,
+    new Date().toISOString(),
+  );
+  return id;
+}
+
 export function countRuns(): number {
   const row = db.prepare("SELECT COUNT(*) AS n FROM runs").get() as {
     n: number;
