@@ -124,9 +124,10 @@ export async function POST(request: Request): Promise<Response> {
         push("plan", `${plan.searches.length} searches planned`, planQueries.join(" · "));
         send({ type: "plan", searches: planQueries });
 
-        // 2. Act loop.
+        // 2. Act loop. Every model action except finish consumes exactly
+        // one step — including skips — so one counter bounds everything
+        // and a stubborn model terminates instead of circling.
         let toolCalls = 0;
-        let iterations = 0;
         let finished = false;
         const seenQueries = new Set<string>();
         const seenUrls = new Set<string>();
@@ -134,10 +135,7 @@ export async function POST(request: Request): Promise<Response> {
         // are free, so the model is nudged toward reading, not re-querying.
         const MAX_SEARCHES = 3;
         let searchCount = 0;
-        // iterations cap: skips don't consume toolCalls, so bound total
-        // passes too (a model stuck on blocked URLs can't loop forever).
-        while (toolCalls < maxSteps && iterations < maxSteps + 5 && !finished) {
-          iterations += 1;
+        while (toolCalls < maxSteps && !finished) {
           if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
           const action = await nextAction({
             question,
@@ -154,17 +152,19 @@ export async function POST(request: Request): Promise<Response> {
             finished = true;
             break;
           }
+          toolCalls += 1;
           if (action.tool === "web_search") {
-            toolCalls += 1;
             const normalizedQuery = action.query.trim().toLowerCase();
             if (searchCount >= MAX_SEARCHES) {
               push("skip-repeat", action.query, `search budget spent (${MAX_SEARCHES} max)`);
               send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (search budget spent): ${action.query}` });
               observations.push({ kind: "search", label: action.query, content: "(search budget spent — fetch a page you have, or finish)" });
+              continue;
             } else if (seenQueries.has(normalizedQuery)) {
               push("skip-repeat", action.query, "repeated query, skipped");
               send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (repeated): ${action.query}` });
               observations.push({ kind: "search", label: action.query, content: "(repeated query, skipped)" });
+              continue;
             } else {
               seenQueries.add(normalizedQuery);
               searchCount += 1;
@@ -207,7 +207,6 @@ export async function POST(request: Request): Promise<Response> {
               continue;
             }
             seenUrls.add(normalizedUrl);
-            toolCalls += 1;
             send({ type: "tool", n: stepNo + 1, tool: "fetch", label: action.url });
             try {
               const page = await fetchPage(action.url);
@@ -224,7 +223,7 @@ export async function POST(request: Request): Promise<Response> {
             }
           }
 
-          // Pacing: DDG rate-limits bursts. 2s between tool calls.
+          // Politeness pacing between network calls (skips jump past it).
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
 

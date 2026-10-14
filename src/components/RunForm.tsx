@@ -73,6 +73,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
       const decoder = new TextDecoder();
       let buffer = "";
       let full = "";
+      let terminal = false;
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -108,14 +109,23 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
             setCitations(event.citations);
             setRunId(event.runId);
             setPhase("done");
+            terminal = true;
           } else if (event.type === "stopped") {
             setRunId(event.runId);
             setPhase("stopped");
+            terminal = true;
           } else if (event.type === "error") {
             setErrorKind(event.message);
             setPhase("error");
+            terminal = true;
           }
         }
+      }
+      if (!terminal) {
+        // Stream ended without a terminal event (connection dropped):
+        // show what arrived and offer retry instead of hanging on "working".
+        setErrorKind("failed");
+        setPhase("error");
       }
     } catch {
       setErrorKind("failed");
