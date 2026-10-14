@@ -10,7 +10,6 @@ import {
   areaClass,
   btnPrimary,
   btnSecondary,
-  inputClass,
   labelClass,
 } from "./ui";
 
@@ -39,7 +38,6 @@ interface TraceRow {
 export function RunForm({ hasKey }: { hasKey: boolean }) {
   const { d } = useI18n();
   const [question, setQuestion] = useState("");
-  const [maxSteps, setMaxSteps] = useState(8);
   const [blocklist, setBlocklist] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [rows, setRows] = useState<TraceRow[]>([]);
@@ -67,7 +65,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
       const response = await fetch("/api/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: q, maxSteps, blocklist: blocked }),
+        body: JSON.stringify({ question: q, blocklist: blocked }),
       });
       if (!response.ok || !response.body) {
         throw new Error(`Request failed (${response.status}).`);
@@ -223,36 +221,19 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
-          <div>
-            <label className={labelClass} htmlFor="max-steps">
-              {d.guards.maxSteps}
-            </label>
-            <input
-              id="max-steps"
-              type="number"
-              min={3}
-              max={8}
-              value={maxSteps}
-              onChange={(event) => setMaxSteps(Number(event.target.value) || 8)}
-              className={inputClass}
-              disabled={working || !hasKey}
-            />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="blocklist">
-              {d.guards.blocklist}
-            </label>
-            <textarea
-              id="blocklist"
-              rows={2}
-              className={areaClass}
-              placeholder={d.guards.blocklistPlaceholder}
-              value={blocklist}
-              onChange={(event) => setBlocklist(event.target.value)}
-              disabled={working || !hasKey}
-            />
-          </div>
+        <div>
+          <label className={labelClass} htmlFor="blocklist">
+            {d.guards.blocklist}
+          </label>
+          <textarea
+            id="blocklist"
+            rows={2}
+            className={areaClass}
+            placeholder={d.guards.blocklistPlaceholder}
+            value={blocklist}
+            onChange={(event) => setBlocklist(event.target.value)}
+            disabled={working || !hasKey}
+          />
         </div>
 
         <p className="text-xs text-muted">{d.guards.readonly}</p>

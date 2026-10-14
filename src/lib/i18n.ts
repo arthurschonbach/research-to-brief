@@ -32,7 +32,6 @@ const en = {
   },
   guards: {
     title: "Guardrails",
-    maxSteps: "Max actions",
     blocklist: "Never visit these sites (one per line, optional)",
     blocklistPlaceholder: "example.com",
     readonly: "Read-only tools: web search + page fetch. The agent cannot change anything.",
@@ -67,7 +66,7 @@ const en = {
   detail: {
     planLabel: "Plan",
     guardsLabel: "Guards",
-    guardsMax: "max {n} actions",
+    guardsMax: "up to {n} pages",
     guardsBlocked: "blocked: {domains}",
     guardsNoneBlocked: "no blocked domains",
   },
@@ -105,7 +104,6 @@ const fr: Dictionary = {
   },
   guards: {
     title: "Garde-fous",
-    maxSteps: "Actions max",
     blocklist: "Ne jamais visiter ces sites (un par ligne, facultatif)",
     blocklistPlaceholder: "example.com",
     readonly: "Outils en lecture seule : recherche web + lecture de pages. L'agent ne peut rien modifier.",
@@ -140,7 +138,7 @@ const fr: Dictionary = {
   detail: {
     planLabel: "Plan",
     guardsLabel: "Garde-fous",
-    guardsMax: "max {n} actions",
+    guardsMax: "jusqu'à {n} pages",
     guardsBlocked: "bloqués : {domains}",
     guardsNoneBlocked: "aucun domaine bloqué",
   },

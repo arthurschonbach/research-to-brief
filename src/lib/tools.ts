@@ -194,6 +194,59 @@ export interface FetchedPage {
   finalUrl: string;
 }
 
+export interface ExtractedPage {
+  url: string;
+  title: string;
+  text: string;
+}
+
+/**
+ * Extract readable content from pages via Tavily (handles JavaScript-
+ * rendered pages that defeat plain fetching). Returns one entry per
+ * input URL that succeeded; failures are omitted (caller falls back).
+ * No key → throws 'no-key' so the caller uses direct fetch instead.
+ */
+export async function tavilyExtract(
+  urls: string[],
+  query: string,
+): Promise<ExtractedPage[]> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) throw new Error("no-key");
+  if (urls.length === 0) return [];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
+  try {
+    const response = await fetch("https://api.tavily.com/extract", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        urls,
+        query,
+        extract_depth: "basic",
+      }),
+    });
+    if (!response.ok) throw new Error(`extract status ${response.status}`);
+    const json = (await response.json()) as {
+      results?: Array<{ url?: string; title?: string; content?: string }>;
+    };
+    const out: ExtractedPage[] = [];
+    for (const r of json.results ?? []) {
+      if (!r.url || !r.content?.trim()) continue;
+      out.push({
+        url: r.url,
+        title: r.title?.trim() || r.url,
+        text: r.content,
+      });
+    }
+    return out;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Keyless readable-text page fetch. Throws with a short reason. */
 export async function fetchPage(raw: string): Promise<FetchedPage> {
   let url: URL;

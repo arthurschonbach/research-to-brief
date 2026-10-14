@@ -9,17 +9,22 @@ import {
   buildBriefPrompt,
   chatModel,
   hasChatKey,
-  nextAction,
+  pickUrls,
   planResearch,
   rewriteBriefWithCitations,
   streamChat,
-  type Observation,
 } from "@/lib/agent";
 
 // Research runs stream for 30–60s; allow the function to live that long
 // on hosts with short defaults (Vercel Hobby).
 export const maxDuration = 60;
-import { fetchPage, isBlocked, webSearch } from "@/lib/tools";
+import {
+  fetchPage,
+  isBlocked,
+  tavilyExtract,
+  webSearch,
+  type SearchResult,
+} from "@/lib/tools";
 import {
   registerRun,
   unregisterRun,
@@ -36,7 +41,13 @@ export type RunEvent =
   | { type: "stopped"; runId: string }
   | { type: "error"; message: string };
 
+// Fixed pipeline budgets. No loop, so nothing can repeat or spin:
+// 3 paid searches max, up to 4 pages read.
+const MAX_SEARCHES = 3;
+const MAX_PAGES = 4;
+
 const FETCH_CHARS = 6000;
+const THIN_CHARS = 500;
 
 function excerpt(text: string, max: number = 220): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -67,20 +78,19 @@ function parseCitations(
   return citations;
 }
 
+function checkAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException("aborted", "AbortError");
+}
+
 export async function POST(request: Request): Promise<Response> {
   let question = "";
-  let maxSteps = 8;
   let blocklist: string[] = [];
   try {
     const body = (await request.json()) as unknown as {
       question?: unknown;
-      maxSteps?: unknown;
       blocklist?: unknown;
     };
     question = typeof body?.question === "string" ? body.question.trim() : "";
-    if (typeof body?.maxSteps === "number") {
-      maxSteps = Math.min(8, Math.max(3, Math.floor(body.maxSteps)));
-    }
     if (Array.isArray(body?.blocklist)) {
       blocklist = body.blocklist
         .filter((e): e is string => typeof e === "string")
@@ -113,13 +123,12 @@ export async function POST(request: Request): Promise<Response> {
         return;
       }
 
-      const runId = createRun({ question, maxSteps, blocklist });
+      const runId = createRun({ question, maxSteps: MAX_PAGES, blocklist });
       registerRun(runId, aborter);
       send({ type: "started", runId });
       request.signal.addEventListener("abort", onAbort);
 
       const steps: TraceStep[] = [];
-      const observations: Observation[] = [];
       const pages: Array<{ url: string; title: string; text: string }> = [];
       let planQueries: string[] = [];
       let stepNo = 0;
@@ -147,149 +156,135 @@ export async function POST(request: Request): Promise<Response> {
       };
 
       try {
-        // 1. Plan.
+        // 1. Plan: 2–5 search queries, one LLM call.
         const plan = await planResearch(question);
         planQueries = plan.searches.map((s) => s.query);
-        if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
+        checkAborted(aborter.signal);
         push("plan", `${plan.searches.length} searches planned`, planQueries.join(" · "));
         send({ type: "plan", searches: planQueries });
 
-        // 2. Act loop. Every model action except finish consumes exactly
-        // one step, including skips, so one counter bounds everything
-        // and a stubborn model terminates instead of circling.
-        let toolCalls = 0;
-        let finished = false;
-        let evidenceNudged = false;
-        const seenQueries = new Set<string>();
-        const seenUrls = new Set<string>();
-        // Demo-tier protection: at most 3 paid searches per run. Fetches
-        // are free, so the model is nudged toward reading, not re-querying.
-        const MAX_SEARCHES = 3;
-        let searchCount = 0;
-        while (toolCalls < maxSteps && !finished) {
-          if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
-          const action = await nextAction({
-            question,
-            plan,
-            observations,
-            stepsUsed: toolCalls,
-            maxSteps,
-            searchesUsed: searchCount,
-            maxSearches: MAX_SEARCHES,
-          });
-          if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
-
-          if (action.tool === "finish") {
-            // Nudge once toward a second source: a one-page finish usually
-            // means the model settled early. The nudge consumes the step.
-            if (pages.length < 2 && toolCalls < maxSteps && !evidenceNudged) {
-              evidenceNudged = true;
-              push("warning", "thin evidence", `only ${pages.length} source(s), fetching another before writing`);
-              send({ type: "result", n: stepNo, kind: "warning", summary: "thin evidence, fetching another source first" });
-              observations.push({ kind: "fetch", label: "evidence", content: "(only evidence from limited sources so far, fetch at least one more distinct page before finishing)" });
-              continue;
+        // 2. Search each planned query (max 3), sequentially: natural
+        // pacing for scraped backends, live rows, no timers.
+        const merged: SearchResult[] = [];
+        const seenResultUrls = new Set<string>();
+        for (const query of planQueries.slice(0, MAX_SEARCHES)) {
+          checkAborted(aborter.signal);
+          send({ type: "tool", n: stepNo + 1, tool: "search", label: query });
+          try {
+            const results = await webSearch(query);
+            const summary =
+              results.length === 0
+                ? "no results"
+                : results.map((r) => `${r.title} (${r.url})`).join(" · ");
+            for (const r of results) {
+              if (!seenResultUrls.has(r.url)) {
+                seenResultUrls.add(r.url);
+                merged.push(r);
+              }
             }
-            finished = true;
-            break;
+            push("search", query, summary);
+            send({ type: "result", n: stepNo, kind: "search", summary });
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : "failed";
+            push("warning", query, `search failed: ${reason}`);
+            send({ type: "result", n: stepNo, kind: "warning", summary: `search failed: ${reason}` });
           }
-          toolCalls += 1;
-          if (action.tool === "web_search") {
-            const normalizedQuery = action.query.trim().toLowerCase();
-            if (searchCount >= MAX_SEARCHES) {
-              push("skip-repeat", action.query, `search budget spent (${MAX_SEARCHES} max)`);
-              send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (search budget spent): ${action.query}` });
-              observations.push({ kind: "search", label: action.query, content: "(search budget spent, fetch a page you have, or finish)" });
-              continue;
-            } else if (seenQueries.has(normalizedQuery)) {
-              push("skip-repeat", action.query, "repeated query, skipped");
-              send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (repeated): ${action.query}` });
-              observations.push({ kind: "search", label: action.query, content: "(repeated query, skipped)" });
-              continue;
-            } else {
-              seenQueries.add(normalizedQuery);
-              searchCount += 1;
-              send({ type: "tool", n: stepNo + 1, tool: "search", label: action.query });
-            try {
-              const results = await webSearch(action.query);
-              const summary =
-                results.length === 0
-                  ? "no results"
-                  : results.map((r) => `${r.title} (${r.url})`).join(" · ");
-              observations.push({
-                kind: "search",
-                label: action.query,
-                content: results
-                  .map((r) => `- ${r.title}, ${r.snippet} [${r.url}]`)
-                  .join("\n"),
-              });
-              push("search", action.query, summary || "no results");
-              send({ type: "result", n: stepNo, kind: "search", summary: summary || "no results" });
-            } catch (error) {
-              const reason = error instanceof Error ? error.message : "failed";
-              push("warning", action.query, `search failed: ${reason}`);
-              send({ type: "result", n: stepNo, kind: "warning", summary: `search failed: ${reason}` });
-              observations.push({ kind: "search", label: action.query, content: "(search failed)" });
-            }
-            }
-          } else {
-            // fetch_page
-            const normalizedUrl = action.url.trim();
-            if (isBlocked(normalizedUrl, blocklist)) {
-              push("skip-blocked", normalizedUrl, "blocked domain");
-              send({ type: "result", n: stepNo, kind: "skip-blocked", summary: `skipped (blocked): ${normalizedUrl}` });
-              observations.push({ kind: "fetch", label: normalizedUrl, content: "(skipped: blocked domain)" });
-              continue;
-            }
-            if (seenUrls.has(normalizedUrl)) {
-              push("skip-repeat", normalizedUrl, "already fetched, skipped");
-              send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (already fetched): ${normalizedUrl}` });
-              observations.push({ kind: "fetch", label: normalizedUrl, content: "(already fetched, skipped)" });
-              continue;
-            }
-            seenUrls.add(normalizedUrl);
-            send({ type: "tool", n: stepNo + 1, tool: "fetch", label: action.url });
-            try {
-              const page = await fetchPage(action.url);
-              const text = page.text.slice(0, FETCH_CHARS);
-              const thin = page.text.length < 500;
-              pages.push({ url: page.finalUrl, title: page.title, text });
-              observations.push({
-                kind: "fetch",
-                label: page.title,
-                content:
-                  (thin
-                    ? `(thin page, only ${page.text.length} chars, likely JavaScript-rendered and unreliable; prefer fetching another source)\n`
-                    : "") +
-                  `[page ${pages.length}] ${page.title}\n${text}`,
-              });
-              push("fetch", page.title, `${page.finalUrl} · ${page.text.length} chars`);
-              send({ type: "result", n: stepNo, kind: "fetch", summary: `${page.title} (${page.text.length} chars)` });
-            } catch (error) {
-              const reason = error instanceof Error ? error.message : "failed";
-              push("warning", action.url, `fetch failed: ${reason}`);
-              send({ type: "result", n: stepNo, kind: "warning", summary: `fetch failed: ${reason}` });
-              observations.push({ kind: "fetch", label: action.url, content: `(fetch failed: ${reason})` });
-            }
-          }
-
-          // Politeness pacing between network calls (skips jump past it).
-          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
 
-        if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
+        checkAborted(aborter.signal);
 
-        // 3. Synthesize.
-        if (pages.length === 0) {
+        // 3. Pick up to 4 pages to read, one LLM call. Blocked domains
+        // are filtered here and shown as skips, never fetched.
+        let chosen: string[] = [];
+        if (merged.length > 0) {
+          const picked = await pickUrls(question, planQueries, merged);
+          checkAborted(aborter.signal);
+          for (const url of picked) {
+            if (isBlocked(url, blocklist)) {
+              push("skip-blocked", url, "blocked domain");
+              send({ type: "result", n: stepNo, kind: "skip-blocked", summary: `skipped (blocked): ${url}` });
+            } else if (!chosen.includes(url)) {
+              chosen.push(url);
+            }
+          }
+          chosen = chosen.slice(0, MAX_PAGES);
+        }
+
+        // 4. Read the pages in parallel: Tavily extract first (handles
+        // JavaScript-rendered pages), direct fetch as fallback per page.
+        // Step numbers are reserved up front so concurrent completions
+        // pair with the right pending rows.
+        if (chosen.length > 0) {
+          const reserved = chosen.map(() => {
+            stepNo += 1;
+            return stepNo;
+          });
+          chosen.forEach((url, i) =>
+            send({ type: "tool", n: reserved[i], tool: "fetch", label: url }),
+          );
+          let extracted = new Map<string, { url: string; title: string; text: string }>();
+          try {
+            const out = await tavilyExtract(chosen, question);
+            extracted = new Map(out.map((p) => [p.url, p]));
+          } catch (error) {
+            // No key or API failure: fall through to direct fetch below.
+            if (!(error instanceof Error) || error.message !== "no-key") {
+              push("warning", "extract", "extract API failed, direct fetch");
+              send({ type: "result", n: stepNo, kind: "warning", summary: "extract API failed, direct fetch" });
+            }
+          }
+          await Promise.all(
+            chosen.map(async (url, i) => {
+              if (aborter.signal.aborted) return;
+              const n = reserved[i];
+              const hit = extracted.get(url);
+              if (hit) {
+                addPage(n, hit.url, hit.title, hit.text);
+                return;
+              }
+              try {
+                const page = await fetchPage(url);
+                addPage(n, page.finalUrl, page.title, page.text);
+              } catch (error) {
+                const reason = error instanceof Error ? error.message : "failed";
+                steps.push({ n, kind: "warning", label: url, detail: `fetch failed: ${reason}` });
+                send({ type: "result", n, kind: "warning", summary: `fetch failed: ${reason}` });
+              }
+            }),
+          );
+        }
+
+        function addPage(n: number, url: string, title: string, text: string): void {
+          const capped = text.slice(0, FETCH_CHARS);
+          const thin = text.length < THIN_CHARS;
+          pages.push({ url, title, text: capped });
+          steps.push({
+            n,
+            kind: "fetch",
+            label: title,
+            detail: `${url} · ${text.length} chars${thin ? " (thin)" : ""}`,
+          });
+          send({ type: "result", n, kind: "fetch", summary: `${title} (${text.length} chars)${thin ? " — thin" : ""}` });
+        }
+
+        checkAborted(aborter.signal);
+
+        // Thin pages only count when nothing better exists.
+        const good = pages.filter((p) => p.text.length >= THIN_CHARS);
+        const usable = good.length >= 2 ? good : pages;
+
+        // 5. Synthesize.
+        if (usable.length === 0) {
           push("warning", "no evidence", "nothing fetchable was collected");
           fail("no-evidence", "no pages could be fetched");
           return;
         }
-        push("answer", "writing brief", `${pages.length} sources`);
+        push("answer", "writing brief", `${usable.length} sources`);
         const briefGen = streamChat(
           briefSystemPrompt(),
           buildBriefPrompt(
             question,
-            pages.map((p, i) => ({ n: i + 1, url: p.url, title: p.title, text: p.text })),
+            usable.map((p, i) => ({ n: i + 1, url: p.url, title: p.title, text: p.text })),
           ),
           1200,
         );
@@ -302,26 +297,24 @@ export async function POST(request: Request): Promise<Response> {
           next = await briefGen.next();
         }
 
-        const citations = parseCitations(full, pages);
+        const citations = parseCitations(full, usable);
 
         if (citations.length === 0) {
-          // The brief dropped its markers, one repair pass, streamed too
-          // so the UI doesn't stall silently.
-          push("warning", "brief", "missing citations, repairing");
-          send({ type: "result", n: stepNo, kind: "warning", summary: "brief missing citations, repairing" });
+          // The brief dropped its markers — one repair pass, delivered as
+          // a single swap so the UI doesn't stall or duplicate text.
+          push("warning", "brief", "missing citations — repairing");
+          send({ type: "result", n: stepNo, kind: "warning", summary: "brief missing citations — repairing" });
           try {
             const repaired = await rewriteBriefWithCitations(
               question,
-              pages.map((p, i) => ({ n: i + 1, url: p.url, title: p.title, text: p.text })),
+              usable.map((p, i) => ({ n: i + 1, url: p.url, title: p.title, text: p.text })),
               full,
             );
             if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
-            const recited = parseCitations(repaired, pages);
+            const recited = parseCitations(repaired, usable);
             if (recited.length > 0) {
               full = repaired;
               citations.push(...recited);
-              // Single replace event (not tokens): the client swaps the
-              // unmarked draft for the repaired text, no duplication.
               send({ type: "repaired", brief: repaired });
             }
           } catch (error) {

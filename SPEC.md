@@ -8,16 +8,16 @@ guardrails enforced (step cap, read-only tools, cancel anytime).
 
 Portfolio role: project #3 of 3, the ***act*** piece. #1
 (`meeting-to-actions`) shows *structured extraction*. #2
-(`docs-to-answers`) shows *retrieval*. This one shows the **agent loop**:
-plan → tool call → observe → synthesize, with cost/latency transparency
-and safety rails a client can inspect.
+(`docs-to-answers`) shows *retrieval*. This one shows **grounded
+research**: plan → search → read → synthesize, with cost/latency
+transparency and safety rails a client can inspect.
 
 ## 2. Non-goals (v1)
 
 - No side-effect tools. Search + fetch only, safety by construction, and
   the UI says so. (Write actions, email sending, etc. are explicitly out.)
-- No function-calling API dependency. The loop uses a strict **ReAct-style
-  JSON action format** validated with zod, so it works on any free-tier
+- No function-calling API dependency. Model outputs are strict JSON
+  (plan, URL picks) validated with zod, so it works on any free-tier
   chat model, including ones with weak tool support.
 - No auth / multi-user. Single-user local app, like #1 and #2.
 - No background workers. Runs execute inside the streaming request;
@@ -27,33 +27,40 @@ and safety rails a client can inspect.
 
 ## 3. Demo story (what a reviewer clicks)
 
-1. Lands on `/`, sees a question box, the guardrail panel (max steps,
-   read-only toolset, cancel button once running), and "Load sample run".
+1. Lands on `/`, sees a question box, the guardrail panel (fixed
+   budgets, read-only toolset, cancel button once running), and "Load
+   sample run".
 2. Asks "What are the cheapest EU options for X?" → a **live trace**
-   appears: plan → `search("…")` → 3 results → `fetch(url)` →
-   `search("…")` → brief streams in with `[1] [2]` citations.
+   appears: plan → searches → picked pages → reads → brief streams in
+   with `[1] [2]` citations.
 3. Clicks a citation → the fetched source excerpt.
 4. Opens history → past runs with steps, latency, model. The trace is the
    hire-me signal: it proves the agent actually did the work.
 
 ## 4. Core flows
 
-### 4.1 Run
+### 4.1 Run (fixed pipeline, no loop)
 
-- Input: research question + guardrails (max steps, default 8; domain
-  blocklist, optional text field).
-- Loop (server-side, streamed as NDJSON trace):
-  1. **Plan**: model writes 2–5 planned searches (parsed JSON, validated).
-  2. **Act**: for each step, model emits one action,
-     `{"tool":"web_search","query":…}` or `{"tool":"fetch_page","url":…}`
-     or `{"tool":"finish"}`. Anything else → validation error → one
-     repair retry → abort step with a logged warning.
-  3. **Observe**: tool result appended to the running context (search:
-     top-5 titles/snippets/urls; fetch: readable text, capped ~8k chars).
-  4. Stop when the model calls `finish`, max steps hit, or user cancels.
-- **Synthesize**: final call writes the brief from collected observations
-  only, with `[n]` citations mapped to fetched pages. Same abstention
-  honesty as #2: thin evidence → brief says what is/isn't established.
+- Input: research question + domain blocklist.
+- Fixed stages, each visible in the trace:
+  1. **Plan**: model writes 2–5 planned searches (parsed JSON, validated,
+     one repair retry, raw-question fallback).
+  2. **Search**: each planned query runs (max 3), sequentially.
+  3. **Pick**: model picks up to 4 URLs from the merged results
+     (distinct sources preferred, same repair discipline). Blocked
+     domains are filtered here and shown as skips, never fetched.
+  4. **Read**: pages fetched in parallel — Tavily extract first (handles
+     JavaScript-rendered pages), direct fetch as fallback per page.
+     Thin pages (<500 chars) only count when nothing better exists.
+  5. **Brief**: streamed, `[n]` markers validated, one repair pass if
+     missing.
+- There is deliberately no agent loop: with fixed stages nothing can
+  repeat, stall, or need pacing timers and iteration caps. The whole run
+  is 4 LLM calls plus searches/fetches.
+- **Synthesize**: final call writes the brief from the collected pages
+  only, with `[n]` citations mapped to fetched pages (one repair pass if
+  markers are missing). Same abstention honesty as #2: thin evidence →
+  brief says what is/isn't established.
 
 ### 4.2 Tools (both keyless)
 
@@ -65,8 +72,8 @@ and safety rails a client can inspect.
 
 ### 4.3 Guardrails (visible in UI, enforced in code)
 
-- Max actions (default 8, adjustable 3–8; one search, fetch or skip
-  each, finish is free).
+- Fixed budgets: max 3 paid searches, up to 4 pages read per run.
+  Nothing to configure, nothing to burn through.
 - Read-only toolset: only the two tools above exist; the UI states this.
 - Domain blocklist (optional free text, one per line; matched as
   substrings, skipped URLs appear in the trace as skipped, not silent).
@@ -75,7 +82,7 @@ and safety rails a client can inspect.
 
 ### 4.4 History
 
-- Runs list: question, date, steps used, status (done / stopped /
+- Runs list: question, date, trace length, status (done / stopped /
   failed), brief length. Click → read-only run detail: full trace
   timeline + brief + cited sources.
 
@@ -103,11 +110,12 @@ i18n pattern.
 
 ## 7. API routes
 
-- `POST /api/runs`, body `{question, maxSteps, blocklist}`. NDJSON
-  stream: `{type:"plan", steps:[…]}`, `{type:"tool", n, tool, label}`,
-  `{type:"result", n, summary}`, `{type:"token", text}` (brief),
-  `{type:"done", runId, brief, citations}` / `{type:"stopped", runId}` /
-  `{type:"error", message}`.
+- `POST /api/runs`, body `{question, blocklist}`. NDJSON
+  stream: `{type:"started", runId}`, `{type:"plan", searches:[…]}`,
+  `{type:"tool", n, tool, label}`, `{type:"result", n, kind, summary}`,
+  `{type:"token", text}` (brief), `{type:"repaired", brief}` on citation
+  repair, `{type:"done", runId, brief, citations}` /
+  `{type:"stopped", runId}` / `{type:"error", message}`.
 - `POST /api/runs/[id]/cancel`, aborts the in-flight run (module-level
   AbortController map; single-user scope documented).
 - `POST /api/sample`, seeds one precomputed run (no key needed).
@@ -118,12 +126,11 @@ i18n pattern.
 
 - Planner system prompt: "Output ONLY JSON: {searches: [{query,
   why}]}. 2–5 queries. …"
-- Actor system prompt: rolling context of plan + observations; "Output
-  ONLY one JSON action per turn: {tool, …}. Call finish when you have
-  enough to brief, or when further calls would repeat."
+- Picker system prompt: "Output ONLY JSON: {urls: [...]}. Up to 4,
+  distinct sources preferred. …" (same repair discipline as the planner).
 - Brief system prompt: same citation discipline as #2 (`[n]` markers,
   validated server-side), thin-evidence honesty clause.
-- Temperature 0.2, tight max_tokens per call (plan 400, actions 200,
+- Temperature 0.2, tight max_tokens per call (plan 400, pick 300,
   brief 1200). Free-tier latency dominates; the trace UI makes waiting
   legible instead of hiding it.
 
@@ -156,9 +163,9 @@ chat UI.
 - [ ] Sample run loads keyless with a full stored trace.
 - [ ] Live run on a fresh question shows plan → searches → fetches →
       cited brief, all in the trace.
-- [ ] Max steps enforced; cancel stops the run and saves partial state.
+- [ ] Max actions enforced; cancel stops the run and saves partial state.
 - [ ] Blocklisted domain appears as skipped in the trace.
-- [ ] README explains the loop, the JSON-action choice, and production
+- [ ] README explains the pipeline, the JSON-output choice, and production
       swaps (job queue, real search API, function calling).
 - [ ] `npm run lint` + `npm run build` clean, no console errors.
 

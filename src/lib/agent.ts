@@ -114,13 +114,6 @@ export const PlanSchema = z.object({
 });
 export type Plan = z.infer<typeof PlanSchema>;
 
-export const ActionSchema = z.union([
-  z.object({ tool: z.literal("web_search"), query: z.string().min(1) }),
-  z.object({ tool: z.literal("fetch_page"), url: z.string().min(1) }),
-  z.object({ tool: z.literal("finish") }),
-]);
-export type Action = z.infer<typeof ActionSchema>;
-
 /** Tolerate fences / surrounding prose, then validate. */
 export function parseJsonAction<T>(
   text: string,
@@ -175,57 +168,54 @@ export async function planResearch(question: string): Promise<Plan> {
   return parsed.value;
 }
 
-export interface Observation {
-  kind: "search" | "fetch";
-  label: string;
-  content: string;
-}
+const PICK_SYSTEM = `You pick which web pages to read for a research brief. Output ONLY JSON, no other text:
+{"urls": [string]}
+Pick up to 4 URLs most likely to answer the question directly. Prefer distinct sources (different sites) and pages that look like articles, docs, or data — not homepages or listings.`;
 
-function observationsBlock(observations: Observation[]): string {
-  if (observations.length === 0) return "(none yet)";
-  return observations
-    .map((o, i) => `[obs ${i + 1}, ${o.kind}: ${o.label}]\n${o.content}`)
-    .join("\n\n");
-}
-
-const ACT_SYSTEM = `You are a research agent that can only read the web. Output ONLY one JSON action per turn, no other text. Shapes:
-{"tool": "web_search", "query": string}, search the web (use for new angles, never repeat a query)
-{"tool": "fetch_page", "url": string}, read one page (prefer the most promising search results, never repeat a URL)
-{"tool": "finish"}, call when you have enough evidence to write the brief, or when further calls would repeat past ones
-Rules: never repeat a query or URL (repeats are skipped); if a search fails or returns nothing, change approach, different query, or fetch a promising URL you already have, instead of retrying the same call.
-Evidence rules: aim for at least 2 distinct fetched pages before finishing factual research; a fetch yielding very little text usually means a JavaScript-heavy page (data portals, dashboards) whose content is unreliable, so fetch another URL instead of settling.`;
-
-export async function nextAction(input: {
-  question: string;
-  plan: Plan;
-  observations: Observation[];
-  stepsUsed: number;
-  maxSteps: number;
-  searchesUsed: number;
-  maxSearches: number;
-}): Promise<Action> {
-  const searchesLeft = input.maxSearches - input.searchesUsed;
-  const user = [
-    `Research question: ${input.question}`,
-    `Plan: ${input.plan.searches.map((s) => s.query).join(" | ")}`,
-    `Steps used: ${input.stepsUsed}/${input.maxSteps}`,
-    searchesLeft > 0
-      ? `Searches left: ${searchesLeft}`
-      : `No searches left, fetch a collected URL or finish. Do not emit web_search.`,
-    `Observations so far:\n${observationsBlock(input.observations)}`,
-    `Next action (one JSON object only):`,
-  ].join("\n\n");
-  const first = await chat(ACT_SYSTEM, user, 200);
-  const parsed = parseJsonAction(first.text, ActionSchema);
-  if (parsed.ok) return parsed.value;
-  const retry = await chat(
-    ACT_SYSTEM,
-    `${user}\n\nYour previous output was invalid (${parsed.reason}). Output one corrected JSON action only.`,
-    200,
+export async function pickUrls(
+  question: string,
+  planQueries: string[],
+  results: Array<{ title: string; url: string; snippet: string }>,
+): Promise<string[]> {
+  const listing = results
+    .map((r, i) => `[${i + 1}] ${r.title} — ${r.snippet} [${r.url}]`)
+    .join("\n");
+  const user = `Research question: ${question}\nPlanned searches: ${planQueries.join(" | ")}\n\nResults:\n${listing}\n\nPick (JSON only):`;
+  const clean = (urls: unknown): string[] =>
+    (Array.isArray(urls) ? urls : [])
+      .filter((u): u is string => typeof u === "string")
+      .map((u) => u.trim())
+      .filter((u) => {
+        try {
+          const parsed = new URL(u);
+          return parsed.protocol === "http:" || parsed.protocol === "https:";
+        } catch {
+          return false;
+        }
+      })
+      .slice(0, 4);
+  const first = await chat(PICK_SYSTEM, user, 300);
+  const parsed = parseJsonAction(
+    first.text,
+    z.object({ urls: z.array(z.string()) }),
   );
-  const second = parseJsonAction(retry.text, ActionSchema);
-  if (second.ok) return second.value;
-  return { tool: "finish" };
+  if (parsed.ok && clean(parsed.value.urls).length > 0) {
+    return clean(parsed.value.urls);
+  }
+  // One repair retry, then fall back to the first valid results.
+  const retry = await chat(
+    PICK_SYSTEM,
+    `${user}\n\nYour previous output was invalid. Output corrected JSON only.`,
+    300,
+  );
+  const second = parseJsonAction(
+    retry.text,
+    z.object({ urls: z.array(z.string()) }),
+  );
+  if (second.ok && clean(second.value.urls).length > 0) {
+    return clean(second.value.urls);
+  }
+  return clean(results.map((r) => r.url));
 }
 
 export interface CitedPage {
