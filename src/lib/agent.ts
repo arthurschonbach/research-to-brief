@@ -192,7 +192,8 @@ const ACT_SYSTEM = `You are a research agent that can only read the web. Output 
 {"tool": "web_search", "query": string}, search the web (use for new angles, never repeat a query)
 {"tool": "fetch_page", "url": string}, read one page (prefer the most promising search results, never repeat a URL)
 {"tool": "finish"}, call when you have enough evidence to write the brief, or when further calls would repeat past ones
-Rules: never repeat a query or URL (repeats are skipped); if a search fails or returns nothing, change approach, different query, or fetch a promising URL you already have, instead of retrying the same call.`;
+Rules: never repeat a query or URL (repeats are skipped); if a search fails or returns nothing, change approach, different query, or fetch a promising URL you already have, instead of retrying the same call.
+Evidence rules: aim for at least 2 distinct fetched pages before finishing factual research; a fetch yielding very little text usually means a JavaScript-heavy page (data portals, dashboards) whose content is unreliable, so fetch another URL instead of settling.`;
 
 export async function nextAction(input: {
   question: string;

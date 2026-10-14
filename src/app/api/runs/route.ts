@@ -211,8 +211,17 @@ export async function POST(request: Request): Promise<Response> {
             try {
               const page = await fetchPage(action.url);
               const text = page.text.slice(0, FETCH_CHARS);
+              const thin = page.text.length < 500;
               pages.push({ url: page.finalUrl, title: page.title, text });
-              observations.push({ kind: "fetch", label: page.title, content: `[page ${pages.length}] ${page.title}\n${text}` });
+              observations.push({
+                kind: "fetch",
+                label: page.title,
+                content:
+                  (thin
+                    ? `(thin page — only ${page.text.length} chars, likely JavaScript-rendered and unreliable; prefer fetching another source)\n`
+                    : "") +
+                  `[page ${pages.length}] ${page.title}\n${text}`,
+              });
               push("fetch", page.title, `${page.finalUrl} · ${page.text.length} chars`);
               send({ type: "result", n: stepNo, kind: "fetch", summary: `${page.title} (${page.text.length} chars)` });
             } catch (error) {
