@@ -28,9 +28,11 @@ type Phase = "idle" | "working" | "done" | "stopped" | "error";
 
 interface TraceRow {
   key: number;
+  n: number | null;
   kind: TraceStep["kind"] | "tool";
   label: string;
   detail: string;
+  pending: boolean;
 }
 
 export function RunForm({ hasKey }: { hasKey: boolean }) {
@@ -87,19 +89,34 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
           if (event.type === "started") {
             setRunId(event.runId);
           } else if (event.type === "plan") {
-            addRow("plan", d.trace.plan, event.searches.join(" · "));
+            addRow(null, "plan", d.trace.plan, event.searches.join(" · "), false);
           } else if (event.type === "tool") {
-            addRow("tool", event.tool === "search" ? d.trace.searching : d.trace.fetching, event.label);
-          } else if (event.type === "result") {
+            // Pending row; the matching result event completes it in place.
             addRow(
-              event.kind === "search" || event.kind === "fetch" ? event.kind : "warning",
-              event.kind === "skip-blocked"
-                ? d.trace.skipped
-                : event.kind === "skip-repeat"
-                  ? d.trace.repeated
-                  : event.kind,
-              event.summary,
+              event.n,
+              "tool",
+              event.tool === "search" ? d.trace.searching : d.trace.fetching,
+              event.label,
+              true,
             );
+          } else if (event.type === "result") {
+            if (event.kind === "search") {
+              completeRow(event.n, "search", d.trace.searched, event.summary, false);
+            } else if (event.kind === "fetch") {
+              completeRow(event.n, "fetch", d.trace.read, event.summary, true);
+            } else {
+              addRow(
+                null,
+                "warning",
+                event.kind === "skip-blocked"
+                  ? d.trace.skipped
+                  : event.kind === "skip-repeat"
+                    ? d.trace.repeated
+                    : event.kind,
+                event.summary,
+                false,
+              );
+            }
           } else if (event.type === "token") {
             full += event.text;
             setBrief(full);
@@ -133,10 +150,46 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
     }
   }
 
-  function addRow(kind: TraceRow["kind"], label: string, detail: string) {
+  function addRow(
+    n: number | null,
+    kind: TraceRow["kind"],
+    label: string,
+    detail: string,
+    pending: boolean,
+  ) {
     keyRef.current += 1;
     const key = keyRef.current;
-    setRows((current) => [...current, { key, kind, label, detail }]);
+    setRows((current) => [...current, { key, n, kind, label, detail, pending }]);
+  }
+
+  function completeRow(
+    n: number,
+    kind: TraceRow["kind"],
+    label: string,
+    summary: string,
+    replaceDetail: boolean,
+  ) {
+    setRows((current) => {
+      const index = current.findIndex((row) => row.pending && row.n === n);
+      if (index === -1) {
+        // No pending row (shouldn't happen) — append instead of losing it.
+        keyRef.current += 1;
+        return [
+          ...current,
+          { key: keyRef.current, n, kind, label, detail: summary, pending: false },
+        ];
+      }
+      const next = [...current];
+      const row = next[index];
+      next[index] = {
+        ...row,
+        kind,
+        label,
+        detail: replaceDetail || !row.detail ? summary : `${row.detail} — ${summary}`,
+        pending: false,
+      };
+      return next;
+    });
   }
 
   async function cancel() {
@@ -233,8 +286,13 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
 
       {brief && (
         <div className="space-y-4">
-          <div className="rounded-md border border-border p-4 sm:p-5">
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{brief}</p>
+          <div>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+              {d.trace.answer}
+            </h2>
+            <div className="rounded-md border border-border p-4 sm:p-5">
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{brief}</p>
+            </div>
           </div>
           {citations.length > 0 && (
             <div>

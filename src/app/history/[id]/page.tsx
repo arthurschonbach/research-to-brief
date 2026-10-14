@@ -13,9 +13,9 @@ function stepLabel(kind: string, d: ReturnType<typeof getDictionary>): string {
     case "plan":
       return d.trace.plan;
     case "search":
-      return d.trace.searching;
+      return d.trace.searched;
     case "fetch":
-      return d.trace.fetching;
+      return d.trace.read;
     case "skip-blocked":
       return d.trace.skipped;
     case "skip-repeat":
@@ -110,10 +110,13 @@ export default async function Page({ params }: PageProps<"/history/[id]">) {
 
       {run.brief ? (
         <div className="space-y-4">
-          <div className="rounded-md border border-border p-4 sm:p-5">
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">
-              {run.brief}
-            </p>
+          <div>
+            <SectionTitle>{d.trace.answer}</SectionTitle>
+            <div className="rounded-md border border-border p-4 sm:p-5">
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                {run.brief}
+              </p>
+            </div>
           </div>
           {cited.length > 0 && (
             <div>

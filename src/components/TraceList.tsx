@@ -3,6 +3,7 @@ export interface TraceRowData {
   kind: string;
   label: string;
   detail: string;
+  pending?: boolean;
 }
 
 function tone(kind: string): string {
@@ -32,7 +33,9 @@ export function TraceList({ rows }: { rows: TraceRowData[] }) {
           key={row.key}
           className="flex items-baseline gap-2.5 rounded-md border border-border px-3 py-2 text-sm"
         >
-          <span className={`shrink-0 text-xs font-medium ${tone(row.kind)}`}>
+          <span
+            className={`shrink-0 text-xs font-medium ${tone(row.kind)}${row.pending ? " animate-pulse" : ""}`}
+          >
             {row.label}
           </span>
           <span className="min-w-0 truncate text-muted" title={row.detail}>
