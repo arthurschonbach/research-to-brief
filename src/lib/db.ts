@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { abortRun } from "./run-registry";
 
 const DB_PATH =
   process.env.DATABASE_PATH ??
@@ -72,6 +73,11 @@ export function getRun(id: string): RunRow | undefined {
   return db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as
     | RunRow
     | undefined;
+}
+
+export function deleteRun(id: string): void {
+  abortRun(id);
+  db.prepare("DELETE FROM runs WHERE id = ?").run(id);
 }
 
 export function seedSampleRun(input: {

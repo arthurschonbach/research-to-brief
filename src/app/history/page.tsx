@@ -49,6 +49,12 @@ async function RunsList() {
     running: d.history.statusRunning,
   };
 
+  function stepCountText(count: number): string {
+    return count === 1
+      ? d.history.stepsCountOne
+      : format(d.history.stepsCount, { count });
+  }
+
   return (
     <ul className="m-0 list-none p-0">
       {runs.map((run) => (
@@ -64,7 +70,7 @@ async function RunsList() {
               <p className="mt-0.5 truncate text-xs text-muted">
                 {[
                   formatDateTime(run.created_at, locale),
-                  format(d.history.stepsCount, { n: parseSteps(run.steps).length }),
+                  stepCountText(parseSteps(run.steps).length),
                 ].join(" · ")}
               </p>
             </div>

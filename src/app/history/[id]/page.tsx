@@ -2,8 +2,9 @@ import Link from "next/link";
 import { getDictionary, format, formatDateTime } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { getRun, parseCited, parseSteps } from "@/lib/db";
+import { deleteRunAction } from "@/lib/actions";
 import { TraceList } from "@/components/TraceList";
-import { EmptyState, SectionTitle, btnGhost } from "@/components/ui";
+import { EmptyState, SectionTitle, btnDanger, btnGhost } from "@/components/ui";
 
 export const instant = false;
 
@@ -71,15 +72,23 @@ export default async function Page({ params }: PageProps<"/history/[id]">) {
           {d.history.back}
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">{run.question}</h1>
-        <p className="text-sm text-muted">
-          {[
-            formatDateTime(run.created_at, locale),
-            run.model,
-            run.latency_ms != null ? `${Math.round(run.latency_ms / 1000)}s` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm text-muted">
+            {[
+              formatDateTime(run.created_at, locale),
+              run.model,
+              run.latency_ms != null ? `${Math.round(run.latency_ms / 1000)}s` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          <form action={deleteRunAction} className="shrink-0">
+            <input type="hidden" name="run_id" value={run.id} />
+            <button type="submit" className={btnDanger}>
+              {d.history.delete}
+            </button>
+          </form>
+        </div>
         <p className="text-xs text-muted">
           {d.detail.guardsLabel}: {format(d.detail.guardsMax, { n: run.max_steps })}
           {" · "}

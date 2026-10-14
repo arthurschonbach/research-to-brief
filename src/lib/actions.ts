@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import sampleFile from "../../data/sample-run.json";
-import { seedSampleRun } from "./db";
+import { deleteRun, seedSampleRun } from "./db";
 
 const SampleSchema = z.object({
   version: z.number(),
@@ -34,4 +34,11 @@ export async function loadSampleAction(): Promise<void> {
     model: parsed.sample.model,
   });
   redirect(`/history/${id}`);
+}
+
+export async function deleteRunAction(formData: FormData): Promise<void> {
+  const id = String(formData.get("run_id") ?? "");
+  if (!id) return;
+  deleteRun(id);
+  redirect("/history");
 }
