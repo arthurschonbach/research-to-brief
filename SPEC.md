@@ -65,12 +65,13 @@ and safety rails a client can inspect.
 
 ### 4.3 Guardrails (visible in UI, enforced in code)
 
-- Max steps (default 8, adjustable 3–15 on the form).
+- Max actions (default 5, adjustable 3–5; one search, fetch or skip
+  each, finish is free).
 - Read-only toolset: only the two tools above exist; the UI states this.
 - Domain blocklist (optional free text, one per line; matched as
   substrings, skipped URLs appear in the trace as skipped, not silent).
 - Cancel button → aborts the run; partial trace + partial brief saved.
-- Per-run panel: steps used, tool calls, wall latency, model id.
+- Per-run panel: actions used, wall latency, model id.
 
 ### 4.4 History
 

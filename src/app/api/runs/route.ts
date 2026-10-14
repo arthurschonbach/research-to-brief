@@ -49,7 +49,7 @@ export async function POST(request: Request): Promise<Response> {
     };
     question = typeof body?.question === "string" ? body.question.trim() : "";
     if (typeof body?.maxSteps === "number") {
-      maxSteps = Math.min(15, Math.max(3, Math.floor(body.maxSteps)));
+      maxSteps = Math.min(5, Math.max(3, Math.floor(body.maxSteps)));
     }
     if (Array.isArray(body?.blocklist)) {
       blocklist = body.blocklist

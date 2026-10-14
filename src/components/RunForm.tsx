@@ -38,7 +38,7 @@ interface TraceRow {
 export function RunForm({ hasKey }: { hasKey: boolean }) {
   const { d } = useI18n();
   const [question, setQuestion] = useState("");
-  const [maxSteps, setMaxSteps] = useState(8);
+  const [maxSteps, setMaxSteps] = useState(5);
   const [blocklist, setBlocklist] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [rows, setRows] = useState<TraceRow[]>([]);
@@ -228,7 +228,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
               id="max-steps"
               type="number"
               min={3}
-              max={15}
+              max={5}
               value={maxSteps}
               onChange={(event) => setMaxSteps(Number(event.target.value) || 8)}
               className={inputClass}
