@@ -1,9 +1,8 @@
 "use server";
 
-import fs from "node:fs";
-import path from "node:path";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import sampleFile from "../../data/sample-run.json";
 import { seedSampleRun } from "./db";
 
 const SampleSchema = z.object({
@@ -21,11 +20,9 @@ const SampleSchema = z.object({
 });
 
 export async function loadSampleAction(): Promise<void> {
-  const raw = fs.readFileSync(
-    path.join(process.cwd(), "data", "sample-run.json"),
-    "utf8",
-  );
-  const parsed = SampleSchema.parse(JSON.parse(raw));
+  // Static import: the JSON is bundled at build time, so it also works
+  // where the filesystem is read-only (Vercel) and data/ isn't deployed.
+  const parsed = SampleSchema.parse(sampleFile);
   const id = seedSampleRun({
     question: parsed.sample.question,
     maxSteps: parsed.sample.max_steps,

@@ -15,6 +15,10 @@ import {
   streamChat,
   type Observation,
 } from "@/lib/agent";
+
+// Research runs stream for 30–60s; allow the function to live that long
+// on hosts with short defaults (Vercel Hobby).
+export const maxDuration = 60;
 import { fetchPage, isBlocked, webSearch } from "@/lib/tools";
 import {
   registerRun,

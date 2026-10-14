@@ -3,7 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 const DB_PATH =
-  process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "research.db");
+  process.env.DATABASE_PATH ??
+  // Vercel's filesystem is read-only except /tmp. Data there is ephemeral
+  // (per-invocation), which is fine for a demo — documented in README.
+  (process.env.VERCEL
+    ? path.join("/tmp", "research.db")
+    : path.join(process.cwd(), "data", "research.db"));
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS runs (
