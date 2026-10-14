@@ -211,7 +211,7 @@ export async function nextAction(input: {
     `Steps used: ${input.stepsUsed}/${input.maxSteps}`,
     searchesLeft > 0
       ? `Searches left: ${searchesLeft}`
-      : `No searches left — fetch a collected URL or finish. Do not emit web_search.`,
+      : `No searches left, fetch a collected URL or finish. Do not emit web_search.`,
     `Observations so far:\n${observationsBlock(input.observations)}`,
     `Next action (one JSON object only):`,
   ].join("\n\n");

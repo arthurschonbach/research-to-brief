@@ -151,7 +151,7 @@ export async function POST(request: Request): Promise<Response> {
         send({ type: "plan", searches: planQueries });
 
         // 2. Act loop. Every model action except finish consumes exactly
-        // one step — including skips — so one counter bounds everything
+        // one step, including skips, so one counter bounds everything
         // and a stubborn model terminates instead of circling.
         let toolCalls = 0;
         let finished = false;
@@ -180,9 +180,9 @@ export async function POST(request: Request): Promise<Response> {
             // means the model settled early. The nudge consumes the step.
             if (pages.length < 2 && toolCalls < maxSteps && !evidenceNudged) {
               evidenceNudged = true;
-              push("warning", "thin evidence", `only ${pages.length} source(s) — fetching another before writing`);
-              send({ type: "result", n: stepNo, kind: "warning", summary: "thin evidence — fetching another source first" });
-              observations.push({ kind: "fetch", label: "evidence", content: "(only evidence from limited sources so far — fetch at least one more distinct page before finishing)" });
+              push("warning", "thin evidence", `only ${pages.length} source(s), fetching another before writing`);
+              send({ type: "result", n: stepNo, kind: "warning", summary: "thin evidence, fetching another source first" });
+              observations.push({ kind: "fetch", label: "evidence", content: "(only evidence from limited sources so far, fetch at least one more distinct page before finishing)" });
               continue;
             }
             finished = true;
@@ -194,7 +194,7 @@ export async function POST(request: Request): Promise<Response> {
             if (searchCount >= MAX_SEARCHES) {
               push("skip-repeat", action.query, `search budget spent (${MAX_SEARCHES} max)`);
               send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (search budget spent): ${action.query}` });
-              observations.push({ kind: "search", label: action.query, content: "(search budget spent — fetch a page you have, or finish)" });
+              observations.push({ kind: "search", label: action.query, content: "(search budget spent, fetch a page you have, or finish)" });
               continue;
             } else if (seenQueries.has(normalizedQuery)) {
               push("skip-repeat", action.query, "repeated query, skipped");
@@ -254,7 +254,7 @@ export async function POST(request: Request): Promise<Response> {
                 label: page.title,
                 content:
                   (thin
-                    ? `(thin page — only ${page.text.length} chars, likely JavaScript-rendered and unreliable; prefer fetching another source)\n`
+                    ? `(thin page, only ${page.text.length} chars, likely JavaScript-rendered and unreliable; prefer fetching another source)\n`
                     : "") +
                   `[page ${pages.length}] ${page.title}\n${text}`,
               });
@@ -301,10 +301,10 @@ export async function POST(request: Request): Promise<Response> {
         const citations = parseCitations(full, pages);
 
         if (citations.length === 0) {
-          // The brief dropped its markers — one repair pass, streamed too
+          // The brief dropped its markers, one repair pass, streamed too
           // so the UI doesn't stall silently.
-          push("warning", "brief", "missing citations — repairing");
-          send({ type: "result", n: stepNo, kind: "warning", summary: "brief missing citations — repairing" });
+          push("warning", "brief", "missing citations, repairing");
+          send({ type: "result", n: stepNo, kind: "warning", summary: "brief missing citations, repairing" });
           try {
             const repaired = await rewriteBriefWithCitations(
               question,

@@ -47,7 +47,7 @@ question ──► plan (2–5 searches, JSON) ──► loop (max N steps):
   skipped deterministically (added after the sample run double-fetched
   one page, the duplicate is still visible in it), iteration cap
   against stubborn loops, cancel anytime with partial results saved.
-- **Honest failures**: thin pages (under 500 chars — usually
+- **Honest failures**: thin pages (under 500 chars, usually
   JavaScript-rendered portals) are flagged to the agent, which fetches
   elsewhere instead of settling; search rate limits, bot-walled pages
   and empty evidence surface as trace warnings or a clean error, never
@@ -57,9 +57,9 @@ question ──► plan (2–5 searches, JSON) ──► loop (max N steps):
 
 ## Keys
 
-- **Search**: Tavily if `TAVILY_API_KEY` is set (free tier, no card —
+- **Search**: Tavily if `TAVILY_API_KEY` is set (free tier, no card,
   recommended for demos), else Brave if `BRAVE_API_KEY` is set, else
-  keyless DuckDuckGo HTML (works until it rate-limits the IP — the trace
+  keyless DuckDuckGo HTML (works until it rate-limits the IP, the trace
   then shows honest `search-rate-limited` warnings). Page fetch is always
   keyless local extraction.
 - **The agent's brain needs a key**: copy `.env.example` to `.env`, set

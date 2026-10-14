@@ -176,7 +176,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
     setRows((current) => {
       const index = current.findIndex((row) => row.pending && row.n === n);
       if (index === -1) {
-        // No pending row (shouldn't happen) — append instead of losing it.
+        // No pending row (shouldn't happen), append instead of losing it.
         keyRef.current += 1;
         return [
           ...current,
@@ -189,7 +189,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
         ...row,
         kind,
         label,
-        detail: replaceDetail || !row.detail ? summary : `${row.detail} — ${summary}`,
+        detail: replaceDetail || !row.detail ? summary : `${row.detail}, ${summary}`,
         pending: false,
       };
       return next;
