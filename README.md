@@ -71,6 +71,14 @@ question ──► plan (2–5 searches, JSON) ──► loop (max 8 actions):
   `OPENAI_API_KEY` (OpenRouter, free-tier keys work; the default model is
   a free one). The sample run and history work without it.
 
+## Deploying (Vercel)
+
+- Set `OPENAI_API_KEY` and `TAVILY_API_KEY` in the project environment
+  variables and redeploy.
+- The database lives in `/tmp` there (filesystem is read-only), so
+  history is ephemeral per invocation - the sample run is always
+  reloadable, which is the demo path.
+
 ## Production-swap notes (deliberately not built)
 
 - Job queue + worker for runs (today they execute inside the streaming
