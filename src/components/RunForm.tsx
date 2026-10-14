@@ -189,6 +189,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
         </div>
 
         <p className="text-xs text-muted">{d.guards.readonly}</p>
+        <p className="text-xs text-muted">{d.guards.searchCap}</p>
 
         {!hasKey && <EmptyState>{d.ask.needsKey}</EmptyState>}
 

@@ -130,6 +130,10 @@ export async function POST(request: Request): Promise<Response> {
         let finished = false;
         const seenQueries = new Set<string>();
         const seenUrls = new Set<string>();
+        // Demo-tier protection: at most 3 paid searches per run. Fetches
+        // are free, so the model is nudged toward reading, not re-querying.
+        const MAX_SEARCHES = 3;
+        let searchCount = 0;
         // iterations cap: skips don't consume toolCalls, so bound total
         // passes too (a model stuck on blocked URLs can't loop forever).
         while (toolCalls < maxSteps && iterations < maxSteps + 5 && !finished) {
@@ -141,6 +145,8 @@ export async function POST(request: Request): Promise<Response> {
             observations,
             stepsUsed: toolCalls,
             maxSteps,
+            searchesUsed: searchCount,
+            maxSearches: MAX_SEARCHES,
           });
           if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
 
@@ -151,12 +157,17 @@ export async function POST(request: Request): Promise<Response> {
           if (action.tool === "web_search") {
             toolCalls += 1;
             const normalizedQuery = action.query.trim().toLowerCase();
-            if (seenQueries.has(normalizedQuery)) {
+            if (searchCount >= MAX_SEARCHES) {
+              push("skip-repeat", action.query, `search budget spent (${MAX_SEARCHES} max)`);
+              send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (search budget spent): ${action.query}` });
+              observations.push({ kind: "search", label: action.query, content: "(search budget spent — fetch a page you have, or finish)" });
+            } else if (seenQueries.has(normalizedQuery)) {
               push("skip-repeat", action.query, "repeated query, skipped");
               send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (repeated): ${action.query}` });
               observations.push({ kind: "search", label: action.query, content: "(repeated query, skipped)" });
             } else {
               seenQueries.add(normalizedQuery);
+              searchCount += 1;
               send({ type: "tool", n: stepNo + 1, tool: "search", label: action.query });
             try {
               const results = await webSearch(action.query);

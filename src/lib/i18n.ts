@@ -36,6 +36,7 @@ const en = {
     blocklist: "Blocked domains (one per line, optional)",
     blocklistPlaceholder: "example.com",
     readonly: "Read-only tools: web search + page fetch. The agent cannot change anything.",
+    searchCap: "Max 3 paid searches per run — reading pages is unlimited.",
   },
   trace: {
     title: "Trace",
@@ -104,6 +105,7 @@ const fr: Dictionary = {
     blocklist: "Domaines bloqués (un par ligne, facultatif)",
     blocklistPlaceholder: "example.com",
     readonly: "Outils en lecture seule : recherche web + lecture de pages. L'agent ne peut rien modifier.",
+    searchCap: "Max 3 recherches payantes par run — lire les pages est illimité.",
   },
   trace: {
     title: "Trace",

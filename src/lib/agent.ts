@@ -200,11 +200,17 @@ export async function nextAction(input: {
   observations: Observation[];
   stepsUsed: number;
   maxSteps: number;
+  searchesUsed: number;
+  maxSearches: number;
 }): Promise<Action> {
+  const searchesLeft = input.maxSearches - input.searchesUsed;
   const user = [
     `Research question: ${input.question}`,
     `Plan: ${input.plan.searches.map((s) => s.query).join(" | ")}`,
     `Steps used: ${input.stepsUsed}/${input.maxSteps}`,
+    searchesLeft > 0
+      ? `Searches left: ${searchesLeft}`
+      : `No searches left — fetch a collected URL or finish. Do not emit web_search.`,
     `Observations so far:\n${observationsBlock(input.observations)}`,
     `Next action (one JSON object only):`,
   ].join("\n\n");
