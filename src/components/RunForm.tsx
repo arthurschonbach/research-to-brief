@@ -91,7 +91,11 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
           } else if (event.type === "result") {
             addRow(
               event.kind === "search" || event.kind === "fetch" ? event.kind : "warning",
-              event.kind === "skip" ? d.trace.skipped : event.kind,
+              event.kind === "skip-blocked"
+                ? d.trace.skipped
+                : event.kind === "skip-repeat"
+                  ? d.trace.repeated
+                  : event.kind,
               event.summary,
             );
           } else if (event.type === "token") {
@@ -280,7 +284,8 @@ function tone(kind: TraceRow["kind"]): string {
     case "search":
     case "fetch":
       return "text-foreground";
-    case "skip":
+    case "skip-blocked":
+    case "skip-repeat":
     case "warning":
       return "text-warning";
     case "tool":

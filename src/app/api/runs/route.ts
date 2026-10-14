@@ -152,8 +152,8 @@ export async function POST(request: Request): Promise<Response> {
             toolCalls += 1;
             const normalizedQuery = action.query.trim().toLowerCase();
             if (seenQueries.has(normalizedQuery)) {
-              push("skip", action.query, "repeated query, skipped");
-              send({ type: "result", n: stepNo, kind: "skip", summary: `skipped (repeated): ${action.query}` });
+              push("skip-repeat", action.query, "repeated query, skipped");
+              send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (repeated): ${action.query}` });
               observations.push({ kind: "search", label: action.query, content: "(repeated query, skipped)" });
             } else {
               seenQueries.add(normalizedQuery);
@@ -184,14 +184,14 @@ export async function POST(request: Request): Promise<Response> {
             // fetch_page
             const normalizedUrl = action.url.trim();
             if (isBlocked(normalizedUrl, blocklist)) {
-              push("skip", normalizedUrl, "blocked domain");
-              send({ type: "result", n: stepNo, kind: "skip", summary: `skipped (blocked): ${normalizedUrl}` });
+              push("skip-blocked", normalizedUrl, "blocked domain");
+              send({ type: "result", n: stepNo, kind: "skip-blocked", summary: `skipped (blocked): ${normalizedUrl}` });
               observations.push({ kind: "fetch", label: normalizedUrl, content: "(skipped: blocked domain)" });
               continue;
             }
             if (seenUrls.has(normalizedUrl)) {
-              push("skip", normalizedUrl, "already fetched, skipped");
-              send({ type: "result", n: stepNo, kind: "skip", summary: `skipped (already fetched): ${normalizedUrl}` });
+              push("skip-repeat", normalizedUrl, "already fetched, skipped");
+              send({ type: "result", n: stepNo, kind: "skip-repeat", summary: `skipped (already fetched): ${normalizedUrl}` });
               observations.push({ kind: "fetch", label: normalizedUrl, content: "(already fetched, skipped)" });
               continue;
             }

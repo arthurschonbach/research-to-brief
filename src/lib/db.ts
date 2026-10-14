@@ -78,7 +78,7 @@ export function countRuns(): number {
 
 export interface TraceStep {
   n: number;
-  kind: "plan" | "search" | "fetch" | "skip" | "warning" | "answer";
+  kind: "plan" | "search" | "fetch" | "skip-blocked" | "skip-repeat" | "warning" | "answer";
   label: string;
   detail: string;
 }
