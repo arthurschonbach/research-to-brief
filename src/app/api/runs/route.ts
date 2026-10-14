@@ -168,7 +168,7 @@ export async function POST(request: Request): Promise<Response> {
                 kind: "search",
                 label: action.query,
                 content: results
-                  .map((r) => `- ${r.title} — ${r.snippet} [${r.url}]`)
+                  .map((r) => `- ${r.title}, ${r.snippet} [${r.url}]`)
                   .join("\n"),
               });
               push("search", action.query, summary || "no results");

@@ -9,7 +9,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Research → Brief",
   description:
-    "An agent that plans web searches, reads pages, and writes cited briefs — with guardrails.",
+    "An agent that plans web searches, reads pages, and writes cited briefs, with guardrails.",
 };
 
 export const instant = false;

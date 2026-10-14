@@ -14,7 +14,7 @@ const en = {
   ask: {
     title: "New research",
     description:
-      "Ask a question. The agent plans searches, reads pages, and writes a cited brief — with the whole trace visible.",
+      "Ask a question. The agent plans searches, reads pages, and writes a cited brief, with the whole trace visible.",
     questionLabel: "Research question",
     questionPlaceholder: "What are the cheapest EU options for e-bike insurance?",
     submit: "Research",
@@ -24,7 +24,7 @@ const en = {
     emptyQuestion: "Type a question first.",
     runFailed: "Research failed. Try again.",
     noEvidence: "Nothing fetchable was found. Try a different question.",
-    stopped: "Run stopped. Partial results were saved — see history.",
+    stopped: "Run stopped. Partial results were saved, see history.",
     citedLabel: "Sources cited",
     viewRun: "View full run →",
     needsKey:
@@ -82,7 +82,7 @@ const fr: Dictionary = {
   ask: {
     title: "Nouvelle recherche",
     description:
-      "Posez une question. L'agent planifie des recherches, lit des pages et rédige une note citée — avec toute la trace visible.",
+      "Posez une question. L'agent planifie des recherches, lit des pages et rédige une note citée, avec toute la trace visible.",
     questionLabel: "Question de recherche",
     questionPlaceholder: "Quelles sont les options les moins chères pour assurer un vélo électrique ?",
     submit: "Rechercher",
@@ -92,7 +92,7 @@ const fr: Dictionary = {
     emptyQuestion: "Tapez d'abord une question.",
     runFailed: "Échec de la recherche. Réessayez.",
     noEvidence: "Rien de lisible trouvé. Essayez une autre question.",
-    stopped: "Run arrêté. Résultats partiels enregistrés — voir l'historique.",
+    stopped: "Run arrêté. Résultats partiels enregistrés, voir l'historique.",
     citedLabel: "Sources citées",
     viewRun: "Voir le run complet →",
     needsKey:

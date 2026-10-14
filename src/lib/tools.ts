@@ -26,7 +26,7 @@ function decodeDuckUrl(href: string): string | null {
     if (target.protocol !== "http:" && target.protocol !== "https:") {
       return null;
     }
-    // Ads and internal redirects point back at duckduckgo.com — skip them.
+    // Ads and internal redirects point back at duckduckgo.com, skip them.
     if (target.hostname.toLowerCase().endsWith("duckduckgo.com")) {
       return null;
     }
@@ -36,14 +36,63 @@ function decodeDuckUrl(href: string): string | null {
   }
 }
 
-/** Keyless web search via DuckDuckGo HTML. Throws on failure. */
+/** Search backend chain: Tavily → Brave → DuckDuckGo (keyless).
+ *  First configured backend wins. Each throws a short reason on failure. */
 export async function webSearch(
   query: string,
   limit: number = 5,
 ): Promise<SearchResult[]> {
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (tavilyKey) return tavilySearch(query, tavilyKey, limit);
   const braveKey = process.env.BRAVE_API_KEY;
   if (braveKey) return braveSearch(query, braveKey, limit);
   return duckSearch(query, limit);
+}
+
+async function tavilySearch(
+  query: string,
+  apiKey: string,
+  limit: number,
+): Promise<SearchResult[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        max_results: Math.min(10, Math.max(1, limit)),
+        search_depth: "basic",
+        include_answer: false,
+      }),
+    });
+    if (!response.ok) throw new Error(`tavily status ${response.status}`);
+    const json = (await response.json()) as {
+      results?: Array<{ title?: string; url?: string; content?: string }>;
+    };
+    const out: SearchResult[] = [];
+    for (const r of json.results ?? []) {
+      if (out.length >= limit) break;
+      if (!r.url || !r.title) continue;
+      try {
+        const u = new URL(r.url);
+        if (u.protocol !== "http:" && u.protocol !== "https:") continue;
+      } catch {
+        continue;
+      }
+      out.push({ title: r.title, url: r.url, snippet: r.content ?? "" });
+    }
+    return out;
+  } catch (error) {
+    throw new Error(
+      `search failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function braveSearch(

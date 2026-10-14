@@ -1,9 +1,9 @@
-# research-to-brief — Spec
+# research-to-brief, Spec
 
 ## 1. One-liner
 
 Ask a research question. An agent plans searches, calls search + fetch
-tools, and writes a **cited brief** — with the whole trace visible and
+tools, and writes a **cited brief**, with the whole trace visible and
 guardrails enforced (step cap, read-only tools, cancel anytime).
 
 Portfolio role: project #3 of 3, the ***act*** piece. #1
@@ -14,7 +14,7 @@ and safety rails a client can inspect.
 
 ## 2. Non-goals (v1)
 
-- No side-effect tools. Search + fetch only — safety by construction, and
+- No side-effect tools. Search + fetch only, safety by construction, and
   the UI says so. (Write actions, email sending, etc. are explicitly out.)
 - No function-calling API dependency. The loop uses a strict **ReAct-style
   JSON action format** validated with zod, so it works on any free-tier
@@ -44,7 +44,7 @@ and safety rails a client can inspect.
   blocklist, optional text field).
 - Loop (server-side, streamed as NDJSON trace):
   1. **Plan**: model writes 2–5 planned searches (parsed JSON, validated).
-  2. **Act**: for each step, model emits one action —
+  2. **Act**: for each step, model emits one action,
      `{"tool":"web_search","query":…}` or `{"tool":"fetch_page","url":…}`
      or `{"tool":"finish"}`. Anything else → validation error → one
      repair retry → abort step with a logged warning.
@@ -68,7 +68,7 @@ and safety rails a client can inspect.
 - Max steps (default 8, adjustable 3–15 on the form).
 - Read-only toolset: only the two tools above exist; the UI states this.
 - Domain blocklist (optional free text, one per line; matched as
-  substrings — skipped URLs appear in the trace as skipped, not silent).
+  substrings, skipped URLs appear in the trace as skipped, not silent).
 - Cancel button → aborts the run; partial trace + partial brief saved.
 - Per-run panel: steps used, tool calls, wall latency, model id.
 
@@ -102,14 +102,14 @@ i18n pattern.
 
 ## 7. API routes
 
-- `POST /api/runs` — body `{question, maxSteps, blocklist}`. NDJSON
+- `POST /api/runs`, body `{question, maxSteps, blocklist}`. NDJSON
   stream: `{type:"plan", steps:[…]}`, `{type:"tool", n, tool, label}`,
   `{type:"result", n, summary}`, `{type:"token", text}` (brief),
   `{type:"done", runId, brief, citations}` / `{type:"stopped", runId}` /
   `{type:"error", message}`.
-- `POST /api/runs/[id]/cancel` — aborts the in-flight run (module-level
+- `POST /api/runs/[id]/cancel`, aborts the in-flight run (module-level
   AbortController map; single-user scope documented).
-- `POST /api/sample` — seeds one precomputed run (no key needed).
+- `POST /api/sample`, seeds one precomputed run (no key needed).
 - Cancel on client disconnect is best-effort; the run saves whatever it
   completed (same honesty rule as #2's ask route).
 
@@ -137,7 +137,7 @@ i18n pattern.
 Reuse verbatim: tokens, `ui.tsx` primitives, 680px container,
 header/footer, theme + language toggles. New only where the agent needs
 it: a **trace timeline** style (step rows with tool/result/warning tones)
-and the guardrail panel. Keep both minimal — a bordered list, not a
+and the guardrail panel. Keep both minimal, a bordered list, not a
 chat UI.
 
 ## 11. Milestones (build order)
@@ -163,10 +163,10 @@ chat UI.
 
 ## 13. Open questions (decide before/with milestone 2)
 
-1. DDG HTML reliability from server-side fetches — verify early; fallback
+1. DDG HTML reliability from server-side fetches, verify early; fallback
    is a second DDG endpoint (`lite.duckduckgo.com`) or documented
    rate-limit degradation.
-2. Free-model JSON discipline — the zod-validate + repair-retry design
+2. Free-model JSON discipline, the zod-validate + repair-retry design
    assumes occasional slop; verify with the default free model at
    milestone 3, tighten prompts if needed.
 3. Cancel plumbing: module-level AbortController map works for local

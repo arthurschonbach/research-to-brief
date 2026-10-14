@@ -104,7 +104,7 @@ export async function* streamChat(
   return { text: full, model };
 }
 
-/* ——— Agent contract ——— */
+/*,—— Agent contract,—— */
 
 export const PlanSchema = z.object({
   searches: z
@@ -148,7 +148,7 @@ export function parseJsonAction<T>(
           .join("; "),
       };
     } catch {
-      // Not valid JSON yet — keep trimming.
+      // Not valid JSON yet, keep trimming.
     }
   }
   return { ok: false, reason: "unparseable JSON" };
@@ -184,15 +184,15 @@ export interface Observation {
 function observationsBlock(observations: Observation[]): string {
   if (observations.length === 0) return "(none yet)";
   return observations
-    .map((o, i) => `[obs ${i + 1} — ${o.kind}: ${o.label}]\n${o.content}`)
+    .map((o, i) => `[obs ${i + 1}, ${o.kind}: ${o.label}]\n${o.content}`)
     .join("\n\n");
 }
 
 const ACT_SYSTEM = `You are a research agent that can only read the web. Output ONLY one JSON action per turn, no other text. Shapes:
-{"tool": "web_search", "query": string} — search the web (use for new angles, never repeat a query)
-{"tool": "fetch_page", "url": string} — read one page (prefer the most promising search results, never repeat a URL)
-{"tool": "finish"} — call when you have enough evidence to write the brief, or when further calls would repeat past ones
-Rules: never repeat a query or URL (repeats are skipped); if a search fails or returns nothing, change approach — different query, or fetch a promising URL you already have — instead of retrying the same call.`;
+{"tool": "web_search", "query": string}, search the web (use for new angles, never repeat a query)
+{"tool": "fetch_page", "url": string}, read one page (prefer the most promising search results, never repeat a URL)
+{"tool": "finish"}, call when you have enough evidence to write the brief, or when further calls would repeat past ones
+Rules: never repeat a query or URL (repeats are skipped); if a search fails or returns nothing, change approach, different query, or fetch a promising URL you already have, instead of retrying the same call.`;
 
 export async function nextAction(input: {
   question: string;
