@@ -75,3 +75,75 @@ export function countRuns(): number {
   };
   return row.n;
 }
+
+export interface TraceStep {
+  n: number;
+  kind: "plan" | "search" | "fetch" | "skip" | "warning" | "answer";
+  label: string;
+  detail: string;
+}
+
+export interface CitedSource {
+  n: number;
+  url: string;
+  title: string;
+  excerpt: string;
+}
+
+export function createRun(input: {
+  question: string;
+  maxSteps: number;
+  blocklist: string[];
+}): string {
+  const id = crypto.randomUUID();
+  db.prepare(
+    "INSERT INTO runs (id, question, status, max_steps, blocklist, plan, steps, brief, cited, model, latency_ms, error, created_at) VALUES (?, ?, 'running', ?, ?, '[]', '[]', '', '[]', NULL, NULL, NULL, ?)",
+  ).run(id, input.question, input.maxSteps, JSON.stringify(input.blocklist), new Date().toISOString());
+  return id;
+}
+
+export function finishRun(
+  id: string,
+  patch: {
+    status: RunStatus;
+    plan: string[];
+    steps: TraceStep[];
+    brief: string;
+    cited: CitedSource[];
+    model: string | null;
+    latencyMs: number;
+    error?: string | null;
+  },
+): void {
+  db.prepare(
+    "UPDATE runs SET status = ?, plan = ?, steps = ?, brief = ?, cited = ?, model = ?, latency_ms = ?, error = ? WHERE id = ?",
+  ).run(
+    patch.status,
+    JSON.stringify(patch.plan),
+    JSON.stringify(patch.steps),
+    patch.brief,
+    JSON.stringify(patch.cited),
+    patch.model,
+    patch.latencyMs,
+    patch.error ?? null,
+    id,
+  );
+}
+
+export function parseSteps(value: string): TraceStep[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as TraceStep[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function parseCited(value: string): CitedSource[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as CitedSource[]) : [];
+  } catch {
+    return [];
+  }
+}

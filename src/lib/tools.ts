@@ -41,6 +41,56 @@ export async function webSearch(
   query: string,
   limit: number = 5,
 ): Promise<SearchResult[]> {
+  const braveKey = process.env.BRAVE_API_KEY;
+  if (braveKey) return braveSearch(query, braveKey, limit);
+  return duckSearch(query, limit);
+}
+
+async function braveSearch(
+  query: string,
+  apiKey: string,
+  limit: number,
+): Promise<SearchResult[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${Math.min(10, Math.max(1, limit))}`,
+      {
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "X-Subscription-Token": apiKey,
+        },
+      },
+    );
+    if (!response.ok) throw new Error(`brave status ${response.status}`);
+    const json = (await response.json()) as {
+      web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
+    };
+    const out: SearchResult[] = [];
+    for (const r of json.web?.results ?? []) {
+      if (out.length >= limit) break;
+      if (!r.url || !r.title) continue;
+      try {
+        const u = new URL(r.url);
+        if (u.protocol !== "http:" && u.protocol !== "https:") continue;
+      } catch {
+        continue;
+      }
+      out.push({ title: r.title, url: r.url, snippet: r.description ?? "" });
+    }
+    return out;
+  } catch (error) {
+    throw new Error(
+      `search failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function duckSearch(query: string, limit: number): Promise<SearchResult[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   let html: string;
@@ -61,6 +111,14 @@ export async function webSearch(
 
   const $ = cheerio.load(html);
   const results: SearchResult[] = [];
+  // DDG serves an HTTP-200/202 challenge page when rate-limited. It has
+  // no .result blocks, so it would silently look like "no results".
+  if ($(".result").length === 0) {
+    if (/challenge|captcha/i.test(html)) {
+      throw new Error("search-rate-limited");
+    }
+    return [];
+  }
   $(".result").each((_, el) => {
     if (results.length >= limit) return;
     const link = $(el).find(".result__a").first();

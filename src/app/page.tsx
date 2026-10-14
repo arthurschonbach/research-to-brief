@@ -1,17 +1,21 @@
+import { Suspense } from "react";
+import { connection } from "next/server";
+import { RunForm } from "@/components/RunForm";
 import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
-import { countRuns } from "@/lib/db";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { hasChatKey } from "@/lib/agent";
+import { PageHeader } from "@/components/ui";
 
 export default async function Page() {
   const d = getDictionary(await getLocale());
-  const runs = countRuns();
 
   return (
     <div className="space-y-10">
       <PageHeader title={d.ask.title} description={d.ask.description} />
 
-      {runs === 0 && <EmptyState>{d.ask.empty}</EmptyState>}
+      <Suspense fallback={null}>
+        <RunSection />
+      </Suspense>
 
       <hr />
 
@@ -27,4 +31,9 @@ export default async function Page() {
       </div>
     </div>
   );
+}
+
+async function RunSection() {
+  await connection();
+  return <RunForm hasKey={hasChatKey()} />;
 }
