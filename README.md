@@ -24,15 +24,20 @@ observe → synthesize, with cost/latency transparency and safety rails.
 ## How it works
 
 ```
-question ──► plan (2–5 searches, JSON) ──► loop (max N steps):
+question ──► plan (2–5 searches, JSON) ──► loop (max 8 actions):
                                                    │
                               ┌────────────────────┼────────────────────┐
                               ▼                    ▼                    ▼
                        web_search              fetch_page            finish
-                       (DDG / Brave)        (readable text)              │
-                              │                    │                    ▼
-                              └────────┬───────────┘            brief (streamed,
-                                                               [n] validated)
+                    (Tavily/Brave/DDG,      (readable text)              │
+                     max 3 paid)                 │                    ▼
+                              │                    │            brief (streamed,
+                              └────────┬───────────┘            [n] validated +
+                                       │                       repair pass)
+                              ┌────────┴────────────────────────────┐
+                              │ 2-source evidence rule; thin pages  │
+                              │ flagged; repeats skipped visibly    │
+                              └─────────────────────────────────────┘
 ```
 
 - **No function-calling API.** The agent speaks strict ReAct-style JSON
@@ -42,11 +47,11 @@ question ──► plan (2–5 searches, JSON) ──► loop (max N steps):
   visible in `src/lib/agent.ts` instead of hidden in a provider SDK.
 - **Read-only tools by construction**: `web_search` and `fetch_page`
   only. There is no tool that changes anything, and the UI says so.
-- **Guardrails, enforced and shown**: max steps (3–15), domain blocklist
-  (skips appear in the trace, never silent), repeated queries/URLs
-  skipped deterministically (added after the sample run double-fetched
-  one page, the duplicate is still visible in it), iteration cap
-  against stubborn loops, cancel anytime with partial results saved.
+- **Guardrails, enforced and shown**: max 8 actions (3–8 adjustable),
+  max 3 paid searches per run, domain blocklist (skips appear in the
+  trace, never silent), repeated queries/URLs skipped deterministically
+  (added after the sample run double-fetched one page, the duplicate is
+  still visible in it), cancel anytime with partial results saved.
 - **Honest failures**: thin pages (under 500 chars, usually
   JavaScript-rendered portals) are flagged to the agent, which fetches
   elsewhere instead of settling; search rate limits, bot-walled pages
@@ -70,7 +75,7 @@ question ──► plan (2–5 searches, JSON) ──► loop (max N steps):
 
 - Job queue + worker for runs (today they execute inside the streaming
   request; cancel is cooperative).
-- Real search API as primary (Brave/Tavily), scraping as fallback.
+- Scraping as fallback only (Tavily primary when configured).
 - Auth + per-user run history (single-user sqlite today).
 - Fetch cache + politeness (robots.txt, per-host pacing) before
   any serious crawl volume.
