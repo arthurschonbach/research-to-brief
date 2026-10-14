@@ -240,7 +240,8 @@ const BRIEF_SYSTEM = `You write research briefs from collected web observations.
 Rules:
 - Answer ONLY from the observations. Every factual claim needs an inline [n] citation using the page numbers.
 - Keep it short: verdict first, then key findings as bullets, then what's unclear.
-- If evidence is thin, say what is and isn't established. Never invent facts. Plain text, no markdown headings.`;
+- If evidence is thin, say what is and isn't established. Never invent facts. Plain text, no markdown headings.
+- Citation format example: "Refunds are available for 30 days [1]. A second sentence about shipping [2]."`;
 
 export function buildBriefPrompt(
   question: string,
@@ -254,4 +255,20 @@ export function buildBriefPrompt(
 
 export function briefSystemPrompt(): string {
   return BRIEF_SYSTEM;
+}
+
+/** One repair pass when the brief drops its [n] markers. */
+export async function rewriteBriefWithCitations(
+  question: string,
+  pages: Array<{ n: number; url: string; title: string; text: string }>,
+  badBrief: string,
+): Promise<string> {
+  const { text } = await chat(
+    BRIEF_SYSTEM,
+    `Research question: ${question}\n\nSources:\n\n${pages
+      .map((p) => `[${p.n}] ${p.title} (${p.url})\n${p.text}`)
+      .join("\n\n")}\n\nYour previous brief is below. It is missing inline [n] citations. Rewrite it so every factual claim ends with its [n] marker. Output only the corrected brief.\n\nPrevious brief:\n${badBrief}`,
+    1200,
+  );
+  return text;
 }

@@ -11,6 +11,7 @@ import {
   hasChatKey,
   nextAction,
   planResearch,
+  rewriteBriefWithCitations,
   streamChat,
   type Observation,
 } from "@/lib/agent";
@@ -26,6 +27,7 @@ export type RunEvent =
   | { type: "tool"; n: number; tool: string; label: string }
   | { type: "result"; n: number; kind: string; summary: string }
   | { type: "token"; text: string }
+  | { type: "repaired"; brief: string }
   | { type: "done"; runId: string; brief: string; citations: CitedSource[] }
   | { type: "stopped"; runId: string }
   | { type: "error"; message: string };
@@ -35,6 +37,30 @@ const FETCH_CHARS = 6000;
 function excerpt(text: string, max: number = 220): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? flat.slice(0, max).trimEnd() + "…" : flat;
+}
+
+function parseCitations(
+  text: string,
+  pages: Array<{ url: string; title: string; text: string }>,
+): CitedSource[] {
+  const citations: CitedSource[] = [];
+  const seen = new Set<number>();
+  for (const match of text.matchAll(/\[(\d+)\]/g)) {
+    const n = Number(match[1]);
+    if (!Number.isInteger(n) || n < 1 || n > pages.length || seen.has(n)) {
+      continue;
+    }
+    seen.add(n);
+    const page = pages[n - 1];
+    citations.push({
+      n,
+      url: page.url,
+      title: page.title,
+      excerpt: excerpt(page.text),
+    });
+  }
+  citations.sort((a, b) => a.n - b.n);
+  return citations;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -49,7 +75,7 @@ export async function POST(request: Request): Promise<Response> {
     };
     question = typeof body?.question === "string" ? body.question.trim() : "";
     if (typeof body?.maxSteps === "number") {
-      maxSteps = Math.min(5, Math.max(3, Math.floor(body.maxSteps)));
+      maxSteps = Math.min(8, Math.max(3, Math.floor(body.maxSteps)));
     }
     if (Array.isArray(body?.blocklist)) {
       blocklist = body.blocklist
@@ -129,6 +155,7 @@ export async function POST(request: Request): Promise<Response> {
         // and a stubborn model terminates instead of circling.
         let toolCalls = 0;
         let finished = false;
+        let evidenceNudged = false;
         const seenQueries = new Set<string>();
         const seenUrls = new Set<string>();
         // Demo-tier protection: at most 3 paid searches per run. Fetches
@@ -149,6 +176,15 @@ export async function POST(request: Request): Promise<Response> {
           if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
 
           if (action.tool === "finish") {
+            // Nudge once toward a second source: a one-page finish usually
+            // means the model settled early. The nudge consumes the step.
+            if (pages.length < 2 && toolCalls < maxSteps && !evidenceNudged) {
+              evidenceNudged = true;
+              push("warning", "thin evidence", `only ${pages.length} source(s) — fetching another before writing`);
+              send({ type: "result", n: stepNo, kind: "warning", summary: "thin evidence — fetching another source first" });
+              observations.push({ kind: "fetch", label: "evidence", content: "(only evidence from limited sources so far — fetch at least one more distinct page before finishing)" });
+              continue;
+            }
             finished = true;
             break;
           }
@@ -262,16 +298,32 @@ export async function POST(request: Request): Promise<Response> {
           next = await briefGen.next();
         }
 
-        const citations: CitedSource[] = [];
-        const seen = new Set<number>();
-        for (const match of full.matchAll(/\[(\d+)\]/g)) {
-          const n = Number(match[1]);
-          if (!Number.isInteger(n) || n < 1 || n > pages.length || seen.has(n)) continue;
-          seen.add(n);
-          const page = pages[n - 1];
-          citations.push({ n, url: page.url, title: page.title, excerpt: excerpt(page.text) });
+        const citations = parseCitations(full, pages);
+
+        if (citations.length === 0) {
+          // The brief dropped its markers — one repair pass, streamed too
+          // so the UI doesn't stall silently.
+          push("warning", "brief", "missing citations — repairing");
+          send({ type: "result", n: stepNo, kind: "warning", summary: "brief missing citations — repairing" });
+          try {
+            const repaired = await rewriteBriefWithCitations(
+              question,
+              pages.map((p, i) => ({ n: i + 1, url: p.url, title: p.title, text: p.text })),
+              full,
+            );
+            if (aborter.signal.aborted) throw new DOMException("aborted", "AbortError");
+            const recited = parseCitations(repaired, pages);
+            if (recited.length > 0) {
+              full = repaired;
+              citations.push(...recited);
+              // Single replace event (not tokens): the client swaps the
+              // unmarked draft for the repaired text, no duplication.
+              send({ type: "repaired", brief: repaired });
+            }
+          } catch (error) {
+            console.error("Citation repair failed:", error);
+          }
         }
-        citations.sort((a, b) => a.n - b.n);
 
         finishRun(runId, {
           status: "done",

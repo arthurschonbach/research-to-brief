@@ -65,7 +65,7 @@ and safety rails a client can inspect.
 
 ### 4.3 Guardrails (visible in UI, enforced in code)
 
-- Max actions (default 5, adjustable 3–5; one search, fetch or skip
+- Max actions (default 8, adjustable 3–8; one search, fetch or skip
   each, finish is free).
 - Read-only toolset: only the two tools above exist; the UI states this.
 - Domain blocklist (optional free text, one per line; matched as

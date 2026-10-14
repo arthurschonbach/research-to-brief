@@ -20,6 +20,7 @@ type StreamEvent =
   | { type: "tool"; n: number; tool: string; label: string }
   | { type: "result"; n: number; kind: string; summary: string }
   | { type: "token"; text: string }
+  | { type: "repaired"; brief: string }
   | { type: "done"; runId: string; brief: string; citations: CitedSource[] }
   | { type: "stopped"; runId: string }
   | { type: "error"; message: string };
@@ -38,7 +39,7 @@ interface TraceRow {
 export function RunForm({ hasKey }: { hasKey: boolean }) {
   const { d } = useI18n();
   const [question, setQuestion] = useState("");
-  const [maxSteps, setMaxSteps] = useState(5);
+  const [maxSteps, setMaxSteps] = useState(8);
   const [blocklist, setBlocklist] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [rows, setRows] = useState<TraceRow[]>([]);
@@ -120,6 +121,9 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
           } else if (event.type === "token") {
             full += event.text;
             setBrief(full);
+          } else if (event.type === "repaired") {
+            full = event.brief;
+            setBrief(event.brief);
           } else if (event.type === "done") {
             full = event.brief;
             setBrief(event.brief);
@@ -228,7 +232,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
               id="max-steps"
               type="number"
               min={3}
-              max={5}
+              max={8}
               value={maxSteps}
               onChange={(event) => setMaxSteps(Number(event.target.value) || 8)}
               className={inputClass}
