@@ -47,9 +47,11 @@ question ──► plan (2–5 searches, JSON) ──► loop (max N steps):
   skipped deterministically (added after the sample run double-fetched
   one page, the duplicate is still visible in it), iteration cap
   against stubborn loops, cancel anytime with partial results saved.
-- **Honest failures**: search rate limits, bot-walled pages and empty
-  evidence surface as trace warnings or a clean error, never as
-  invented findings.
+- **Honest failures**: thin pages (under 500 chars — usually
+  JavaScript-rendered portals) are flagged to the agent, which fetches
+  elsewhere instead of settling; search rate limits, bot-walled pages
+  and empty evidence surface as trace warnings or a clean error, never
+  as invented findings.
 - **Stack**: Next.js 16, React 19, Tailwind v4, `better-sqlite3`, cheerio,
   OpenAI SDK against OpenRouter. EN/FR, light/dark, 680px sober layout.
 
