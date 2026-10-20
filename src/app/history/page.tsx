@@ -22,7 +22,7 @@ export default async function Page() {
 function statusTone(status: RunRow["status"]): string {
   switch (status) {
     case "done":
-      return "text-accent font-medium";
+      return "text-muted";
     case "stopped":
       return "text-warning font-medium";
     case "failed":
@@ -52,7 +52,7 @@ async function RunsList() {
   function stepCountText(count: number): string {
     return count === 1
       ? d.history.stepsCountOne
-      : format(d.history.stepsCount, { count });
+      : format(d.history.stepsCount, { n: count });
   }
 
   return (

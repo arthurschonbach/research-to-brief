@@ -12,39 +12,46 @@ export function SiteHeader() {
 
   const links = [
     { href: "/", label: d.nav.new, active: pathname === "/" },
-    {
-      href: "/history",
-      label: d.nav.history,
-      active:
-        pathname.startsWith("/history"),
-    },
+    { href: "/history", label: d.nav.history, active: pathname.startsWith("/history") },
   ];
 
+  const [from, to] = d.brand.split("→").map((part) => part.trim());
+
   return (
-    <header className="border-b border-border">
-      <div className="mx-auto flex w-full max-w-[680px] flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-5 py-5">
+    <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
+      <div className="mx-auto flex min-h-14 w-full max-w-[680px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3">
         <Link
           href="/"
-          className="font-semibold tracking-tight text-foreground no-underline"
+          aria-label={d.brand}
+          className="inline-flex items-baseline gap-1.5 text-[0.9375rem] font-semibold tracking-tight text-foreground no-underline"
         >
-          {d.brand}
+          <span>{from}</span>
+          {to && (
+            <>
+              <span aria-hidden className="font-normal text-accent">
+                →
+              </span>
+              <span>{to}</span>
+            </>
+          )}
         </Link>
-        <nav className="flex items-center gap-5 text-sm">
+        <nav className="flex items-center gap-1 text-sm">
           {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               aria-current={link.active ? "page" : undefined}
               className={cn(
-                "transition-colors",
+                "rounded-md px-2.5 py-1 transition-colors",
                 link.active
-                  ? "text-accent font-medium"
+                  ? "bg-surface font-medium text-foreground"
                   : "text-muted hover:text-foreground",
               )}
             >
               {link.label}
             </Link>
           ))}
+          <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
           <ThemeToggle />
           <LanguageToggle />
         </nav>
@@ -77,7 +84,7 @@ function ThemeToggle() {
       onClick={toggle}
       aria-label="Toggle color theme"
       title="Toggle color theme"
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface text-muted transition-colors hover:border-muted hover:text-foreground cursor-pointer"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-foreground cursor-pointer"
     >
       <svg className="theme-icon-sun" viewBox="0 0 24 24" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="4" />

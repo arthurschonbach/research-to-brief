@@ -78,6 +78,22 @@ function parseCitations(
   return citations;
 }
 
+// Same page, different string: drop fragment, tracking params, "www.",
+// trailing slash. Used to dedupe picks and fetched pages.
+function urlKey(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^(utm_|fbclid$|gclid$|ref$)/i.test(key)) u.searchParams.delete(key);
+    }
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    return `${host}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+  } catch {
+    return url.trim();
+  }
+}
+
 function checkAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new DOMException("aborted", "AbortError");
 }
@@ -203,7 +219,7 @@ export async function POST(request: Request): Promise<Response> {
             if (isBlocked(url, blocklist)) {
               push("skip-blocked", url, "blocked domain");
               send({ type: "result", n: stepNo, kind: "skip-blocked", summary: `skipped (blocked): ${url}` });
-            } else if (!chosen.includes(url)) {
+            } else if (!chosen.some((c) => urlKey(c) === urlKey(url))) {
               chosen.push(url);
             }
           }
@@ -255,6 +271,12 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         function addPage(n: number, url: string, title: string, text: string): void {
+          // Two picks can still redirect to one page: keep the first.
+          if (pages.some((p) => urlKey(p.url) === urlKey(url))) {
+            steps.push({ n, kind: "skip-repeat", label: url, detail: "same page as an earlier read" });
+            send({ type: "result", n, kind: "skip-repeat", summary: `same page as an earlier read: ${url}` });
+            return;
+          }
           const capped = text.slice(0, FETCH_CHARS);
           const thin = text.length < THIN_CHARS;
           pages.push({ url, title, text: capped });

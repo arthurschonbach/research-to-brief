@@ -6,43 +6,50 @@ export interface TraceRowData {
   pending?: boolean;
 }
 
-function tone(kind: string): string {
+function tone(kind: string): { label: string; dot: string } {
   switch (kind) {
     case "plan":
-      return "text-accent";
+    case "answer":
+      return { label: "text-accent", dot: "bg-accent" };
     case "search":
     case "fetch":
-      return "text-foreground";
+      return { label: "text-foreground", dot: "bg-foreground/60" };
     case "skip-blocked":
     case "skip-repeat":
     case "warning":
-      return "text-warning";
-    case "answer":
-      return "text-accent";
+      return { label: "text-warning", dot: "bg-warning" };
     default:
-      return "text-muted";
+      return { label: "text-muted", dot: "bg-border-strong" };
   }
 }
 
+/* Vertical timeline: one hairline, a dot per step. Reads as a sequence
+   without boxing every row. */
 export function TraceList({ rows }: { rows: TraceRowData[] }) {
   if (rows.length === 0) return null;
   return (
-    <ul className="space-y-1.5">
-      {rows.map((row) => (
-        <li
-          key={row.key}
-          className="flex items-baseline gap-2.5 rounded-md border border-border px-3 py-2 text-sm"
-        >
-          <span
-            className={`shrink-0 text-xs font-medium ${tone(row.kind)}${row.pending ? " animate-pulse" : ""}`}
-          >
-            {row.label}
-          </span>
-          <span className="min-w-0 truncate text-muted" title={row.detail}>
-            {row.detail}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <ol className="relative ml-1 border-l border-border">
+      {rows.map((row) => {
+        const t = tone(row.kind);
+        return (
+          <li key={row.key} className="relative py-1.5 pl-5 text-sm">
+            <span
+              aria-hidden
+              className={`absolute top-[0.9rem] -left-[4.5px] h-2 w-2 rounded-full ring-4 ring-background ${t.dot}${row.pending ? " animate-pulse" : ""}`}
+            />
+            <div className="flex min-w-0 items-baseline gap-2.5">
+              <span
+                className={`min-w-20 shrink-0 text-xs font-medium ${t.label}${row.pending ? " animate-pulse" : ""}`}
+              >
+                {row.label}
+              </span>
+              <span className="min-w-0 truncate text-muted" title={row.detail}>
+                {row.detail}
+              </span>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

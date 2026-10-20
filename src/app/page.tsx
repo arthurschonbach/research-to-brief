@@ -5,7 +5,8 @@ import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { hasChatKey } from "@/lib/agent";
 import { loadSampleAction } from "@/lib/actions";
-import { PageHeader } from "@/components/ui";
+import { countRuns } from "@/lib/db";
+import { PageHeader, btnSecondary } from "@/components/ui";
 
 export default async function Page() {
   const d = getDictionary(await getLocale());
@@ -20,17 +21,9 @@ export default async function Page() {
 
       <hr />
 
-      <div>
-        <p className="mb-3 text-sm text-muted">{d.ask.empty}</p>
-        <form action={loadSampleAction}>
-          <button
-            type="submit"
-            className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-sm text-muted transition-colors hover:border-muted hover:text-foreground cursor-pointer"
-          >
-            {d.ask.sampleButton}
-          </button>
-        </form>
-      </div>
+      <Suspense fallback={null}>
+        <SampleSection />
+      </Suspense>
     </div>
   );
 }
@@ -38,4 +31,19 @@ export default async function Page() {
 async function RunSection() {
   await connection();
   return <RunForm hasKey={hasChatKey()} />;
+}
+
+async function SampleSection() {
+  await connection();
+  const d = getDictionary(await getLocale());
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      {countRuns() === 0 && <p className="text-sm text-muted">{d.ask.empty}</p>}
+      <form action={loadSampleAction}>
+        <button type="submit" className={btnSecondary}>
+          {d.ask.sampleButton}
+        </button>
+      </form>
+    </div>
+  );
 }

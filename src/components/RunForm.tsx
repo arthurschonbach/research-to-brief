@@ -5,12 +5,16 @@ import Link from "next/link";
 import { useI18n } from "./LocaleProvider";
 import type { CitedSource, TraceStep } from "@/lib/db";
 import { TraceList } from "./TraceList";
+import { BriefView } from "./BriefView";
 import {
   EmptyState,
+  ErrorBox,
+  SectionTitle,
   areaClass,
   btnPrimary,
   btnSecondary,
   labelClass,
+  linkClass,
 } from "./ui";
 
 type StreamEvent =
@@ -104,16 +108,18 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
             } else if (event.kind === "fetch") {
               completeRow(event.n, "fetch", d.trace.read, event.summary, true);
             } else {
-              addRow(
-                null,
+              // Warnings/skips: settle the matching pending row if there is
+              // one (e.g. a failed read), otherwise append.
+              completeRow(
+                event.n,
                 "warning",
                 event.kind === "skip-blocked"
                   ? d.trace.skipped
                   : event.kind === "skip-repeat"
                     ? d.trace.repeated
-                    : event.kind,
+                    : d.trace.warning,
                 event.summary,
-                false,
+                true,
               );
             }
           } else if (event.type === "token") {
@@ -174,7 +180,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
     setRows((current) => {
       const index = current.findIndex((row) => row.pending && row.n === n);
       if (index === -1) {
-        // No pending row (shouldn't happen), append instead of losing it.
+        // No pending row (standalone warning), append it.
         keyRef.current += 1;
         return [
           ...current,
@@ -217,6 +223,11 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
             placeholder={d.ask.questionPlaceholder}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                void start();
+              }
+            }}
             disabled={working || !hasKey}
           />
         </div>
@@ -236,8 +247,10 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
           />
         </div>
 
-        <p className="text-xs text-muted">{d.guards.readonly}</p>
-        <p className="text-xs text-muted">{d.guards.searchCap}</p>
+        <ul className="space-y-0.5 text-xs text-muted">
+          <li>{d.guards.readonly}</li>
+          <li>{d.guards.searchCap}</li>
+        </ul>
 
         {!hasKey && <EmptyState>{d.ask.needsKey}</EmptyState>}
 
@@ -260,9 +273,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
 
       {rows.length > 0 && (
         <div>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
-            {d.trace.title}
-          </h2>
+          <SectionTitle>{d.trace.title}</SectionTitle>
           <div aria-live="polite">
             <TraceList rows={rows} />
           </div>
@@ -270,38 +281,16 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
       )}
 
       {brief && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
-              {d.trace.answer}
-            </h2>
-            <div className="rounded-md border border-border p-4 sm:p-5">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{brief}</p>
-            </div>
-          </div>
-          {citations.length > 0 && (
-            <div>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
-                {d.ask.citedLabel}
-              </h2>
-              <ul className="space-y-2">
-                {citations.map((c) => (
-                  <li key={c.n} className="rounded-md border border-border p-3 text-sm">
-                    <p className="text-xs font-medium text-muted">
-                      [{c.n}] · {c.title}
-                    </p>
-                    <p className="mt-1 break-all text-muted">{c.url}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {runId && (
+        <div className="space-y-5">
+          <BriefView
+            brief={brief}
+            citations={citations}
+            briefLabel={d.trace.answer}
+            citedLabel={d.ask.citedLabel}
+          />
+          {runId && phase === "done" && (
             <p className="text-sm">
-              <Link
-                href={`/history/${runId}`}
-                className="text-muted underline underline-offset-4 transition-colors hover:text-foreground"
-              >
+              <Link href={`/history/${runId}`} className={`text-muted ${linkClass}`}>
                 {d.ask.viewRun}
               </Link>
             </p>
@@ -312,9 +301,14 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
       {phase === "stopped" && <EmptyState>{d.ask.stopped}</EmptyState>}
 
       {phase === "error" && (
-        <div className="rounded-md border border-danger-border bg-danger-soft px-4 py-3 text-sm text-danger">
-          {errorMessage(d.ask, errorKind)}
-        </div>
+        <ErrorBox
+          title={errorMessage(d.ask, errorKind)}
+          action={
+            <button type="button" className={btnSecondary} onClick={() => void start()}>
+              {d.ask.retry}
+            </button>
+          }
+        />
       )}
     </div>
   );

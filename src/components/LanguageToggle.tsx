@@ -13,7 +13,7 @@ export function LanguageToggle() {
     <div
       role="group"
       aria-label={d.language.switchTo}
-      className="inline-flex h-7 items-center overflow-hidden rounded-md border border-border bg-surface text-xs"
+      className="inline-flex h-7 items-center gap-0.5 rounded-md bg-surface p-0.5 text-[0.6875rem]"
     >
       {OPTIONS.map((option) => {
         const active = option === locale;
@@ -24,9 +24,9 @@ export function LanguageToggle() {
             aria-pressed={active}
             onClick={() => setLocale(option)}
             className={cn(
-              "h-full px-2 uppercase tracking-wide transition-colors cursor-pointer",
+              "h-full rounded-[5px] px-2 font-medium tracking-wider uppercase transition-colors cursor-pointer",
               active
-                ? "bg-foreground text-background font-medium"
+                ? "bg-background text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08)] ring-1 ring-border"
                 : "text-muted hover:text-foreground",
             )}
           >

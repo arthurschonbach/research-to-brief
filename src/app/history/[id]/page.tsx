@@ -4,7 +4,15 @@ import { getLocale } from "@/lib/locale";
 import { getRun, parseCited, parseSteps } from "@/lib/db";
 import { deleteRunAction } from "@/lib/actions";
 import { TraceList } from "@/components/TraceList";
-import { EmptyState, SectionTitle, btnDanger, btnGhost } from "@/components/ui";
+import { BriefView } from "@/components/BriefView";
+import {
+  EmptyState,
+  ErrorBox,
+  PageTitle,
+  SectionTitle,
+  btnDanger,
+  btnGhost,
+} from "@/components/ui";
 
 export const instant = false;
 
@@ -71,7 +79,7 @@ export default async function Page({ params }: PageProps<"/history/[id]">) {
         <Link href="/history" className={btnGhost}>
           {d.history.back}
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{run.question}</h1>
+        <PageTitle>{run.question}</PageTitle>
         <div className="flex items-start justify-between gap-4">
           <p className="text-sm text-muted">
             {[
@@ -99,9 +107,7 @@ export default async function Page({ params }: PageProps<"/history/[id]">) {
       </div>
 
       {run.error && (
-        <div className="rounded-md border border-danger-border bg-danger-soft px-4 py-3 text-sm text-danger">
-          {run.error}
-        </div>
+        <ErrorBox title={run.error} />
       )}
 
       {steps.length > 0 && (
@@ -130,34 +136,12 @@ export default async function Page({ params }: PageProps<"/history/[id]">) {
       )}
 
       {run.brief ? (
-        <div className="space-y-4">
-          <div>
-            <SectionTitle>{d.trace.answer}</SectionTitle>
-            <div className="rounded-md border border-border p-4 sm:p-5">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {run.brief}
-              </p>
-            </div>
-          </div>
-          {cited.length > 0 && (
-            <div>
-              <SectionTitle>{d.ask.citedLabel}</SectionTitle>
-              <ul className="space-y-2">
-                {cited.map((c) => (
-                  <li
-                    key={c.n}
-                    className="rounded-md border border-border p-3 text-sm"
-                  >
-                    <p className="text-xs font-medium text-muted">
-                      [{c.n}] · {c.title}
-                    </p>
-                    <p className="mt-1 break-all text-muted">{c.url}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+        <BriefView
+          brief={run.brief}
+          citations={cited}
+          briefLabel={d.trace.answer}
+          citedLabel={d.ask.citedLabel}
+        />
       ) : run.status === "stopped" ? (
         <EmptyState>{d.trace.cancelled}</EmptyState>
       ) : null}
