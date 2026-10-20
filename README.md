@@ -57,7 +57,7 @@ Search backend is the first configured key, else keyless DuckDuckGo:
 |----------|---------|
 | `OPENAI_API_KEY` | (required for live runs) |
 | `OPENAI_BASE_URL` | `https://openrouter.ai/api/v1` |
-| `OPENAI_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` |
+| `OPENAI_MODEL` | `nvidia/nemotron-3.5-super-vl:free` |
 | `TAVILY_API_KEY` | (recommended for demos; free tier, no card) |
 | `BRAVE_API_KEY` | (fallback) |
 | `DATABASE_PATH` | `./data/research.db` |
