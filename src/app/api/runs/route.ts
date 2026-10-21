@@ -15,9 +15,9 @@ import {
   streamChat,
 } from "@/lib/agent";
 
-// Research runs stream for 30–60s; allow the function to live that long
-// on hosts with short defaults (Vercel Hobby).
-export const maxDuration = 60;
+// Research runs stream for 30–60s, longer when the free provider needs
+// retries. Vercel allows up to 300s.
+export const maxDuration = 300;
 import {
   fetchPage,
   isBlocked,
@@ -25,10 +25,6 @@ import {
   webSearch,
   type SearchResult,
 } from "@/lib/tools";
-import {
-  registerRun,
-  unregisterRun,
-} from "@/lib/run-registry";
 
 export type RunEvent =
   | { type: "started"; runId: string }
@@ -120,10 +116,13 @@ export async function POST(request: Request): Promise<Response> {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: RunEvent) =>
-        controller.enqueue(
-          new TextEncoder().encode(JSON.stringify(event) + "\n"),
-        );
+      const send = (event: RunEvent) => {
+        try {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n"));
+        } catch {
+          // Client went away (Stop); the abort below records the run.
+        }
+      };
       const started = Date.now();
       const aborter = new AbortController();
       const onAbort = () => aborter.abort();
@@ -139,8 +138,7 @@ export async function POST(request: Request): Promise<Response> {
         return;
       }
 
-      const runId = createRun({ question, maxSteps: MAX_PAGES, blocklist });
-      registerRun(runId, aborter);
+      const runId = await createRun({ question, maxSteps: MAX_PAGES, blocklist });
       send({ type: "started", runId });
       request.signal.addEventListener("abort", onAbort);
 
@@ -152,8 +150,8 @@ export async function POST(request: Request): Promise<Response> {
         stepNo += 1;
         steps.push({ n: stepNo, kind, label, detail });
       };
-      const fail = (message: string, error: string | null = null) => {
-        finishRun(runId, {
+      const fail = async (message: string, error: string | null = null) => {
+        await finishRun(runId, {
           status: "failed",
           plan: planQueries,
           steps,
@@ -298,7 +296,7 @@ export async function POST(request: Request): Promise<Response> {
         // 5. Synthesize.
         if (usable.length === 0) {
           push("warning", "no evidence", "nothing fetchable was collected");
-          fail("no-evidence", "no pages could be fetched");
+          await fail("no-evidence", "no pages could be fetched");
           return;
         }
         push("answer", "writing brief", `${usable.length} sources`);
@@ -344,7 +342,7 @@ export async function POST(request: Request): Promise<Response> {
           }
         }
 
-        finishRun(runId, {
+        await finishRun(runId, {
           status: "done",
           plan: planQueries,
           steps,
@@ -357,7 +355,7 @@ export async function POST(request: Request): Promise<Response> {
         controller.close();
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
-          finishRun(runId, {
+          await finishRun(runId, {
             status: "stopped",
             plan: planQueries,
             steps,
@@ -375,9 +373,8 @@ export async function POST(request: Request): Promise<Response> {
           return;
         }
         console.error("Run failed:", error);
-        fail("failed", error instanceof Error ? error.message : String(error));
+        await fail("failed", error instanceof Error ? error.message : String(error));
       } finally {
-        unregisterRun(runId);
         request.signal.removeEventListener("abort", onAbort);
       }
     },

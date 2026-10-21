@@ -1,15 +1,14 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
-import { abortRun } from "./run-registry";
+import postgres from "postgres";
 
-const DB_PATH =
-  process.env.DATABASE_PATH ??
-  // Vercel's filesystem is read-only except /tmp. Data there is ephemeral
-  // (per-invocation), which is fine for a demo — documented in README.
-  (process.env.VERCEL
-    ? path.join("/tmp", "research.db")
-    : path.join(process.cwd(), "data", "research.db"));
+// Postgres (Neon in production). One shared database, so every serverless
+// instance sees the same runs.
+function createSql() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set. Add it to .env.");
+  // prepare: false - Neon's pooled endpoint (PgBouncer) can't keep
+  // prepared statements across transactions.
+  return postgres(url, { prepare: false, max: 5, onnotice: () => {} });
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS runs (
@@ -29,20 +28,23 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 `;
 
-function createDb(): Database.Database {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  const instance = new Database(DB_PATH);
-  instance.pragma("journal_mode = WAL");
-  instance.pragma("foreign_keys = ON");
-  instance.exec(SCHEMA);
-  return instance;
-}
+const globalForDb = globalThis as unknown as {
+  __rtbSql?: postgres.Sql;
+  __rtbSchema?: Promise<void>;
+};
 
-const globalForDb = globalThis as unknown as { __rtbDb?: Database.Database };
-const db = globalForDb.__rtbDb ?? (globalForDb.__rtbDb = createDb());
-
-export function getDb(): Database.Database {
-  return db;
+/** The database, with tables created on first use in this process. */
+async function db(): Promise<postgres.Sql> {
+  const sql = (globalForDb.__rtbSql ??= createSql());
+  globalForDb.__rtbSchema ??= sql
+    .unsafe(SCHEMA)
+    .then(() => undefined)
+    .catch((error) => {
+      globalForDb.__rtbSchema = undefined; // retry on the next request
+      throw error;
+    });
+  await globalForDb.__rtbSchema;
+  return sql;
 }
 
 export type RunStatus = "running" | "done" | "stopped" | "failed";
@@ -63,24 +65,34 @@ export interface RunRow {
   created_at: string;
 }
 
-export function listRuns(): RunRow[] {
-  return db
-    .prepare("SELECT * FROM runs ORDER BY created_at DESC")
-    .all() as RunRow[];
+// A run's function is killed at maxDuration (300s) without a chance to
+// record it, so a run still "running" well past that is reported as failed.
+const STALE_MS = 6 * 60 * 1000;
+
+function withStaleCheck(run: RunRow): RunRow {
+  if (run.status !== "running") return run;
+  if (Date.now() - Date.parse(run.created_at) < STALE_MS) return run;
+  return { ...run, status: "failed", error: run.error ?? "timed out" };
 }
 
-export function getRun(id: string): RunRow | undefined {
-  return db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as
-    | RunRow
-    | undefined;
+export async function listRuns(): Promise<RunRow[]> {
+  const sql = await db();
+  const rows = await sql<RunRow[]>`SELECT * FROM runs ORDER BY created_at DESC`;
+  return rows.map(withStaleCheck);
 }
 
-export function deleteRun(id: string): void {
-  abortRun(id);
-  db.prepare("DELETE FROM runs WHERE id = ?").run(id);
+export async function getRun(id: string): Promise<RunRow | undefined> {
+  const sql = await db();
+  const [row] = await sql<RunRow[]>`SELECT * FROM runs WHERE id = ${id}`;
+  return row && withStaleCheck(row);
 }
 
-export function seedSampleRun(input: {
+export async function deleteRun(id: string): Promise<void> {
+  const sql = await db();
+  await sql`DELETE FROM runs WHERE id = ${id}`;
+}
+
+export async function seedSampleRun(input: {
   question: string;
   maxSteps: number;
   blocklist: string;
@@ -89,31 +101,32 @@ export function seedSampleRun(input: {
   brief: string;
   cited: string;
   model: string | null;
-}): string {
-  db.prepare("DELETE FROM runs WHERE question = ?").run(input.question);
+}): Promise<string> {
   const id = crypto.randomUUID();
-  db.prepare(
-    "INSERT INTO runs (id, question, status, max_steps, blocklist, plan, steps, brief, cited, model, latency_ms, error, created_at) VALUES (?, ?, 'done', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)",
-  ).run(
-    id,
-    input.question,
-    input.maxSteps,
-    input.blocklist,
-    input.plan,
-    input.steps,
-    input.brief,
-    input.cited,
-    input.model,
-    new Date().toISOString(),
-  );
+  const sql = await db();
+  await sql.begin(async (tx) => {
+    await tx`DELETE FROM runs WHERE question = ${input.question}`;
+    await tx`INSERT INTO runs ${tx({
+      id,
+      question: input.question,
+      status: "done",
+      max_steps: input.maxSteps,
+      blocklist: input.blocklist,
+      plan: input.plan,
+      steps: input.steps,
+      brief: input.brief,
+      cited: input.cited,
+      model: input.model,
+      created_at: new Date().toISOString(),
+    })}`;
+  });
   return id;
 }
 
-export function countRuns(): number {
-  const row = db.prepare("SELECT COUNT(*) AS n FROM runs").get() as {
-    n: number;
-  };
-  return row.n;
+export async function countRuns(): Promise<number> {
+  const sql = await db();
+  const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM runs`;
+  return n;
 }
 
 export interface TraceStep {
@@ -130,19 +143,25 @@ export interface CitedSource {
   excerpt: string;
 }
 
-export function createRun(input: {
+export async function createRun(input: {
   question: string;
   maxSteps: number;
   blocklist: string[];
-}): string {
+}): Promise<string> {
   const id = crypto.randomUUID();
-  db.prepare(
-    "INSERT INTO runs (id, question, status, max_steps, blocklist, plan, steps, brief, cited, model, latency_ms, error, created_at) VALUES (?, ?, 'running', ?, ?, '[]', '[]', '', '[]', NULL, NULL, NULL, ?)",
-  ).run(id, input.question, input.maxSteps, JSON.stringify(input.blocklist), new Date().toISOString());
+  const sql = await db();
+  await sql`INSERT INTO runs ${sql({
+    id,
+    question: input.question,
+    status: "running",
+    max_steps: input.maxSteps,
+    blocklist: JSON.stringify(input.blocklist),
+    created_at: new Date().toISOString(),
+  })}`;
   return id;
 }
 
-export function finishRun(
+export async function finishRun(
   id: string,
   patch: {
     status: RunStatus;
@@ -154,20 +173,18 @@ export function finishRun(
     latencyMs: number;
     error?: string | null;
   },
-): void {
-  db.prepare(
-    "UPDATE runs SET status = ?, plan = ?, steps = ?, brief = ?, cited = ?, model = ?, latency_ms = ?, error = ? WHERE id = ?",
-  ).run(
-    patch.status,
-    JSON.stringify(patch.plan),
-    JSON.stringify(patch.steps),
-    patch.brief,
-    JSON.stringify(patch.cited),
-    patch.model,
-    patch.latencyMs,
-    patch.error ?? null,
-    id,
-  );
+): Promise<void> {
+  const sql = await db();
+  await sql`UPDATE runs SET ${sql({
+    status: patch.status,
+    plan: JSON.stringify(patch.plan),
+    steps: JSON.stringify(patch.steps),
+    brief: patch.brief,
+    cited: JSON.stringify(patch.cited),
+    model: patch.model,
+    latency_ms: patch.latencyMs,
+    error: patch.error ?? null,
+  })} WHERE id = ${id}`;
 }
 
 export function parseSteps(value: string): TraceStep[] {

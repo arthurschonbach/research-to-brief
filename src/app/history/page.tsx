@@ -34,7 +34,7 @@ function statusTone(status: RunRow["status"]): string {
 
 async function RunsList() {
   await connection();
-  const runs = listRuns();
+  const runs = await listRuns();
   const locale = await getLocale();
   const d = getDictionary(locale);
 

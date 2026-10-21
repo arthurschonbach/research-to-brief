@@ -38,7 +38,7 @@ async function SampleSection() {
   const d = getDictionary(await getLocale());
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {countRuns() === 0 && <p className="text-sm text-muted">{d.ask.empty}</p>}
+      {(await countRuns()) === 0 && <p className="text-sm text-muted">{d.ask.empty}</p>}
       <form action={loadSampleAction}>
         <button type="submit" className={btnSecondary}>
           {d.ask.sampleButton}

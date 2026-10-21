@@ -50,6 +50,9 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
   const [runId, setRunId] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<string | null>(null);
   const keyRef = useRef(0);
+  // Stop = drop the connection: the server watches request.signal, which
+  // works whichever serverless instance is running the research.
+  const abortRef = useRef<AbortController | null>(null);
 
   const working = phase === "working";
 
@@ -64,10 +67,13 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
     setErrorKind(null);
 
     const blocked = blocklist.split("\n").map((s) => s.trim()).filter(Boolean);
+    const aborter = new AbortController();
+    abortRef.current = aborter;
 
     try {
       const response = await fetch("/api/runs", {
         method: "POST",
+        signal: aborter.signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: q, blocklist: blocked }),
       });
@@ -153,8 +159,12 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
         setPhase("error");
       }
     } catch {
-      setErrorKind("failed");
-      setPhase("error");
+      if (aborter.signal.aborted) {
+        setPhase("stopped");
+      } else {
+        setErrorKind("failed");
+        setPhase("error");
+      }
     }
   }
 
@@ -200,13 +210,8 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
     });
   }
 
-  async function cancel() {
-    if (!runId) return;
-    try {
-      await fetch(`/api/runs/${runId}/cancel`, { method: "POST" });
-    } catch {
-      // Server will finish on its own; the trace shows what completed.
-    }
+  function cancel() {
+    abortRef.current?.abort();
   }
 
   return (
@@ -264,7 +269,7 @@ export function RunForm({ hasKey }: { hasKey: boolean }) {
             {working ? d.ask.working : d.ask.submit}
           </button>
           {working && (
-            <button type="button" className={btnSecondary} onClick={() => void cancel()}>
+            <button type="button" className={btnSecondary} onClick={cancel}>
               {d.trace.cancel}
             </button>
           )}

@@ -5,6 +5,9 @@ const BASE_URL =
   process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1";
 const MODEL =
   process.env.OPENAI_MODEL ?? "nvidia/nemotron-3.5-super-vl:free";
+// Tried by OpenRouter when the primary model's provider errors.
+const FALLBACK_MODEL =
+  process.env.OPENAI_FALLBACK_MODEL ?? "nvidia/nemotron-3.5-lightning:free";
 
 export function hasChatKey(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
@@ -23,29 +26,21 @@ function getClient(): OpenAI {
   client ??= new OpenAI({
     apiKey,
     baseURL: BASE_URL,
-    timeout: 120_000,
-    maxRetries: 0,
+    // Free-tier providers sometimes hang or rate-limit: fail fast and let
+    // the SDK retry 408/429/5xx with backoff.
+    timeout: 30_000,
+    maxRetries: 2,
   });
   return client;
 }
 
-interface OpenRouterChatParams
-  extends OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming {
-  reasoning?: { enabled?: boolean };
-}
-
-interface OpenRouterStreamParams
-  extends OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming {
-  reasoning?: { enabled?: boolean };
-}
-
-async function chat(
-  system: string,
-  user: string,
-  maxTokens: number,
-): Promise<{ text: string; model: string }> {
-  const base = {
+// OpenRouter extensions: `models` lists fallbacks, and `reasoning` turns
+// off "thinking" so the whole token budget goes to the answer.
+function requestBody(system: string, user: string, maxTokens: number) {
+  return {
     model: MODEL,
+    models: [MODEL, FALLBACK_MODEL],
+    reasoning: { enabled: false },
     temperature: 0.2,
     max_tokens: maxTokens,
     messages: [
@@ -53,19 +48,39 @@ async function chat(
       { role: "user" as const, content: user },
     ],
   };
-  let completion: OpenAI.Chat.Completions.ChatCompletion;
-  try {
-    completion = await getClient().chat.completions.create({
-      ...base,
-      reasoning: { enabled: false },
-    } as OpenRouterChatParams);
-  } catch {
-    completion = await getClient().chat.completions.create(base);
+}
+
+// OpenRouter answers 200 before the provider responds, so a provider
+// timeout arrives as an `error` field in the body. The SDK only retries on
+// HTTP status, so retry those here.
+const ATTEMPTS = 3;
+
+function bodyError(payload: unknown): Error | null {
+  const error = (payload as { error?: { message?: string } }).error;
+  return error ? new Error(error.message ?? "Provider error") : null;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function chat(
+  system: string,
+  user: string,
+  maxTokens: number,
+): Promise<{ text: string; model: string }> {
+  for (let attempt = 1; ; attempt++) {
+    const completion = await getClient().chat.completions.create(
+      requestBody(system, user, maxTokens),
+    );
+    const error = bodyError(completion);
+    if (!error && completion.choices?.length) {
+      return {
+        text: completion.choices[0].message.content ?? "",
+        model: completion.model ?? MODEL,
+      };
+    }
+    if (attempt === ATTEMPTS) throw error ?? new Error("Empty completion");
+    await wait(1000 * attempt);
   }
-  return {
-    text: completion.choices[0]?.message.content ?? "",
-    model: completion.model ?? MODEL,
-  };
 }
 
 export async function* streamChat(
@@ -73,35 +88,30 @@ export async function* streamChat(
   user: string,
   maxTokens: number,
 ): AsyncGenerator<{ token: string }, { text: string; model: string }> {
-  const base = {
-    model: MODEL,
-    temperature: 0.2,
-    max_tokens: maxTokens,
-    stream: true as const,
-    messages: [
-      { role: "system" as const, content: system },
-      { role: "user" as const, content: user },
-    ],
-  };
-  let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
-  try {
-    stream = await getClient().chat.completions.create({
-      ...base,
-      reasoning: { enabled: false },
-    } as OpenRouterStreamParams);
-  } catch {
-    stream = await getClient().chat.completions.create(base);
-  }
   let full = "";
   let model = MODEL;
-  for await (const chunk of stream) {
-    model = chunk.model ?? model;
-    const delta = chunk.choices[0]?.delta?.content;
-    if (!delta) continue;
-    full += delta;
-    yield { token: delta };
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const stream = await getClient().chat.completions.create({
+        ...requestBody(system, user, maxTokens),
+        stream: true,
+      });
+      for await (const chunk of stream) {
+        const error = bodyError(chunk);
+        if (error) throw error;
+        model = chunk.model ?? model;
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (!delta) continue;
+        full += delta;
+        yield { token: delta };
+      }
+      return { text: full, model };
+    } catch (error) {
+      // Once tokens reached the client, a retry would duplicate them.
+      if (full || attempt === ATTEMPTS) throw error;
+      await wait(1000 * attempt);
+    }
   }
-  return { text: full, model };
 }
 
 /*,—— Agent contract,—— */

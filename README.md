@@ -47,32 +47,34 @@ two tools exist, both read-only: `web_search` and `fetch_page`.
 
 ## Setup
 
-Copy `.env.example` to `.env` and set `OPENAI_API_KEY` (an OpenRouter
-key; the default model is a free one). Without it, new runs show a
-notice — the sample run and history still work.
+1. **Database**: in the Vercel project, Storage → Create → Neon, and
+   connect it. That sets `DATABASE_URL`; the table is created on first
+   request. For local dev, pull it with `vercel env pull .env.local`.
+2. **Keys**: set `OPENAI_API_KEY` (an OpenRouter key; the default models
+   are free) and `TAVILY_API_KEY` in Vercel and in `.env`. Without the
+   OpenRouter key, new runs show a notice — the sample run and history
+   still work.
 
 Search backend is the first configured key, else keyless DuckDuckGo:
 
 | Variable | Default |
 |----------|---------|
+| `DATABASE_URL` | (required) |
 | `OPENAI_API_KEY` | (required for live runs) |
 | `OPENAI_BASE_URL` | `https://openrouter.ai/api/v1` |
 | `OPENAI_MODEL` | `nvidia/nemotron-3.5-super-vl:free` |
+| `OPENAI_FALLBACK_MODEL` | `nvidia/nemotron-3.5-lightning:free` (used when the primary fails) |
 | `TAVILY_API_KEY` | (recommended for demos; free tier, no card) |
 | `BRAVE_API_KEY` | (fallback) |
-| `DATABASE_PATH` | `./data/research.db` |
 
 ## Notes
 
-- Storage is SQLite (`better-sqlite3`), single-user.
-- On Vercel the database lives in `/tmp` (read-only filesystem), so
-  history is ephemeral there — the sample run is always reloadable.
-  Set `OPENAI_API_KEY` and `TAVILY_API_KEY` in the project environment
-  variables and redeploy.
+- Stop closes the run's connection; the server sees the disconnect and
+  saves the partial trace as "stopped".
 
 ```bash
 npm install
-npm run dev      # http://localhost:3000
+npm run dev      # http://localhost:3000 (needs DATABASE_URL)
 npm run lint
 npm run build
 ```

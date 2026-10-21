@@ -50,7 +50,7 @@ function parseStringArray(value: string): string[] {
 
 export default async function Page({ params }: PageProps<"/history/[id]">) {
   const { id } = await params;
-  const run = getRun(id);
+  const run = await getRun(id);
 
   const locale = await getLocale();
   const d = getDictionary(locale);
