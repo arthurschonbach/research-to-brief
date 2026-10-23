@@ -45,6 +45,36 @@ No function-calling API: the model outputs strict JSON (a search plan,
 then URL picks), validated with zod and one repair retry each. Only
 two tools exist, both read-only: `web_search` and `fetch_page`.
 
+## Grounding check
+
+Every finished brief goes through a judge-free check
+(`src/lib/grounding.ts`): each number must appear in a page it cites
+(thousands separators normalised, `3.5` never matching inside `13.5`),
+and each finding bullet must carry a citation. Problems show up as
+warnings in the trace, next to the brief, instead of being silently
+trusted. It can't prove a sentence true, but it catches invented or
+mistyped figures, the failure that is easiest to miss when reading.
+
+## Running it as a public demo
+
+- **Per-visitor data**: a proxy gives each browser an anonymous id
+  (httpOnly cookie) and every query is scoped to it, so visitors never
+  see or delete each other's runs. Demo data is purged after 30 days.
+- **Rate limits**: fixed-window counters in Postgres
+  (`src/lib/limits.ts`): 5 runs per 10 minutes and 15 per day per IP,
+  25 per day in total, sized for Tavily's free monthly quota.
+- **Page fetches**: only public addresses are fetched. Localhost,
+  private ranges and cloud metadata are refused, and every redirect
+  hop is re-checked (`src/lib/safe-fetch.ts`). Picked URLs come from
+  search results and the model, so they are untrusted input.
+
+## Tests
+
+`npm test` runs the unit tests (Vitest): grounding, citation parsing,
+URL dedup, the JSON contract parser, the DuckDuckGo scraper (ads,
+rate-limit challenge pages), page extraction and address filtering.
+CI runs lint, typecheck, tests and build on every push.
+
 ## Setup
 
 1. **Database**: in the Vercel project, Storage → Create → Neon, and
@@ -76,5 +106,6 @@ Search backend is the first configured key, else keyless DuckDuckGo:
 npm install
 npm run dev      # http://localhost:3000 (needs DATABASE_URL)
 npm run lint
+npm test
 npm run build
 ```

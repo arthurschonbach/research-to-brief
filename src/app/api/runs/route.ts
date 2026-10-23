@@ -15,9 +15,10 @@ import {
   streamChat,
 } from "@/lib/agent";
 
-// Research runs stream for 30–60s, longer when the free provider needs
-// retries. Vercel allows up to 300s.
-export const maxDuration = 300;
+import { excerpt, parseCitations, urlKey } from "@/lib/citations";
+import { checkGrounding } from "@/lib/grounding";
+import { RUN_LIMITS } from "@/lib/limits";
+import { hitLimit } from "@/lib/rate-limit";
 import {
   fetchPage,
   isBlocked,
@@ -25,6 +26,11 @@ import {
   webSearch,
   type SearchResult,
 } from "@/lib/tools";
+import { clientIp, getVisitorId } from "@/lib/visitor";
+
+// Research runs stream for 30–60s, longer when the free provider needs
+// retries. Vercel allows up to 300s.
+export const maxDuration = 300;
 
 export type RunEvent =
   | { type: "started"; runId: string }
@@ -45,50 +51,8 @@ const MAX_PAGES = 4;
 const FETCH_CHARS = 6000;
 const THIN_CHARS = 500;
 
-function excerpt(text: string, max: number = 220): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? flat.slice(0, max).trimEnd() + "…" : flat;
-}
-
-function parseCitations(
-  text: string,
-  pages: Array<{ url: string; title: string; text: string }>,
-): CitedSource[] {
-  const citations: CitedSource[] = [];
-  const seen = new Set<number>();
-  for (const match of text.matchAll(/\[(\d+)\]/g)) {
-    const n = Number(match[1]);
-    if (!Number.isInteger(n) || n < 1 || n > pages.length || seen.has(n)) {
-      continue;
-    }
-    seen.add(n);
-    const page = pages[n - 1];
-    citations.push({
-      n,
-      url: page.url,
-      title: page.title,
-      excerpt: excerpt(page.text),
-    });
-  }
-  citations.sort((a, b) => a.n - b.n);
-  return citations;
-}
-
-// Same page, different string: drop fragment, tracking params, "www.",
-// trailing slash. Used to dedupe picks and fetched pages.
-function urlKey(url: string): string {
-  try {
-    const u = new URL(url);
-    u.hash = "";
-    for (const key of [...u.searchParams.keys()]) {
-      if (/^(utm_|fbclid$|gclid$|ref$)/i.test(key)) u.searchParams.delete(key);
-    }
-    const host = u.hostname.toLowerCase().replace(/^www\./, "");
-    return `${host}${u.pathname.replace(/\/+$/, "")}${u.search}`;
-  } catch {
-    return url.trim();
-  }
-}
+const MAX_QUESTION_CHARS = 500;
+const MAX_BLOCKLIST_ENTRY_CHARS = 100;
 
 function checkAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new DOMException("aborted", "AbortError");
@@ -102,17 +66,24 @@ export async function POST(request: Request): Promise<Response> {
       question?: unknown;
       blocklist?: unknown;
     };
-    question = typeof body?.question === "string" ? body.question.trim() : "";
+    question =
+      typeof body?.question === "string"
+        ? body.question.trim().slice(0, MAX_QUESTION_CHARS)
+        : "";
     if (Array.isArray(body?.blocklist)) {
       blocklist = body.blocklist
         .filter((e): e is string => typeof e === "string")
-        .map((e) => e.trim())
+        .map((e) => e.trim().slice(0, MAX_BLOCKLIST_ENTRY_CHARS))
         .filter(Boolean)
         .slice(0, 20);
     }
   } catch {
     question = "";
   }
+  const visitor = await getVisitorId();
+  // Only runs that would actually start count against the budget.
+  const limited =
+    question && hasChatKey() ? await hitLimit(clientIp(request.headers), RUN_LIMITS) : null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -137,8 +108,13 @@ export async function POST(request: Request): Promise<Response> {
         controller.close();
         return;
       }
+      if (limited) {
+        send({ type: "error", message: "rate-limited" });
+        controller.close();
+        return;
+      }
 
-      const runId = await createRun({ question, maxSteps: MAX_PAGES, blocklist });
+      const runId = await createRun(visitor, { question, maxSteps: MAX_PAGES, blocklist });
       send({ type: "started", runId });
       request.signal.addEventListener("abort", onAbort);
 
@@ -340,6 +316,19 @@ export async function POST(request: Request): Promise<Response> {
           } catch (error) {
             console.error("Citation repair failed:", error);
           }
+        }
+
+        // Numbers and findings the sources don't back are shown in the
+        // trace, next to the brief, rather than silently trusted.
+        const issues = checkGrounding(
+          full,
+          usable.map((p) => ({ text: p.text })),
+          question,
+        );
+        for (const issue of issues) {
+          const summary = `check: ${issue.detail} — "${excerpt(issue.claim, 120)}"`;
+          push("warning", "grounding", summary);
+          send({ type: "result", n: stepNo, kind: "warning", summary });
         }
 
         await finishRun(runId, {

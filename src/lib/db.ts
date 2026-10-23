@@ -26,7 +26,29 @@ CREATE TABLE IF NOT EXISTS runs (
   error TEXT,
   created_at TEXT NOT NULL
 );
+
+-- Runs belong to an anonymous visitor (see lib/visitor.ts). Runs from
+-- before this column existed stay NULL: no one sees them, the purge
+-- removes them.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS visitor_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_runs_visitor ON runs(visitor_id);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT NOT NULL,
+  window_start BIGINT NOT NULL,
+  count INTEGER NOT NULL,
+  PRIMARY KEY (key, window_start)
+);
 `;
+
+// Demo data is kept for RETENTION_DAYS, then purged.
+export const RETENTION_DAYS = 30;
+
+async function purge(sql: postgres.Sql): Promise<void> {
+  // Timestamps are ISO strings, which sort like dates.
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
+  await sql`DELETE FROM runs WHERE created_at < ${cutoff} OR visitor_id IS NULL`;
+}
 
 const globalForDb = globalThis as unknown as {
   __rtbSql?: postgres.Sql;
@@ -34,10 +56,12 @@ const globalForDb = globalThis as unknown as {
 };
 
 /** The database, with tables created on first use in this process. */
-async function db(): Promise<postgres.Sql> {
+export async function db(): Promise<postgres.Sql> {
   const sql = (globalForDb.__rtbSql ??= createSql());
+  // Purge runs once per process start, which on serverless is often enough.
   globalForDb.__rtbSchema ??= sql
     .unsafe(SCHEMA)
+    .then(() => purge(sql))
     .then(() => undefined)
     .catch((error) => {
       globalForDb.__rtbSchema = undefined; // retry on the next request
@@ -75,24 +99,26 @@ function withStaleCheck(run: RunRow): RunRow {
   return { ...run, status: "failed", error: run.error ?? "timed out" };
 }
 
-export async function listRuns(): Promise<RunRow[]> {
+export async function listRuns(visitor: string): Promise<RunRow[]> {
   const sql = await db();
-  const rows = await sql<RunRow[]>`SELECT * FROM runs ORDER BY created_at DESC`;
+  const rows = await sql<RunRow[]>`
+    SELECT * FROM runs WHERE visitor_id = ${visitor} ORDER BY created_at DESC`;
   return rows.map(withStaleCheck);
 }
 
-export async function getRun(id: string): Promise<RunRow | undefined> {
+export async function getRun(visitor: string, id: string): Promise<RunRow | undefined> {
   const sql = await db();
-  const [row] = await sql<RunRow[]>`SELECT * FROM runs WHERE id = ${id}`;
+  const [row] = await sql<RunRow[]>`
+    SELECT * FROM runs WHERE id = ${id} AND visitor_id = ${visitor}`;
   return row && withStaleCheck(row);
 }
 
-export async function deleteRun(id: string): Promise<void> {
+export async function deleteRun(visitor: string, id: string): Promise<void> {
   const sql = await db();
-  await sql`DELETE FROM runs WHERE id = ${id}`;
+  await sql`DELETE FROM runs WHERE id = ${id} AND visitor_id = ${visitor}`;
 }
 
-export async function seedSampleRun(input: {
+export async function seedSampleRun(visitor: string, input: {
   question: string;
   maxSteps: number;
   blocklist: string;
@@ -105,9 +131,10 @@ export async function seedSampleRun(input: {
   const id = crypto.randomUUID();
   const sql = await db();
   await sql.begin(async (tx) => {
-    await tx`DELETE FROM runs WHERE question = ${input.question}`;
+    await tx`DELETE FROM runs WHERE question = ${input.question} AND visitor_id = ${visitor}`;
     await tx`INSERT INTO runs ${tx({
       id,
+      visitor_id: visitor,
       question: input.question,
       status: "done",
       max_steps: input.maxSteps,
@@ -123,9 +150,10 @@ export async function seedSampleRun(input: {
   return id;
 }
 
-export async function countRuns(): Promise<number> {
+export async function countRuns(visitor: string): Promise<number> {
   const sql = await db();
-  const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM runs`;
+  const [{ n }] = await sql<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM runs WHERE visitor_id = ${visitor}`;
   return n;
 }
 
@@ -143,7 +171,7 @@ export interface CitedSource {
   excerpt: string;
 }
 
-export async function createRun(input: {
+export async function createRun(visitor: string, input: {
   question: string;
   maxSteps: number;
   blocklist: string[];
@@ -152,6 +180,7 @@ export async function createRun(input: {
   const sql = await db();
   await sql`INSERT INTO runs ${sql({
     id,
+    visitor_id: visitor,
     question: input.question,
     status: "running",
     max_steps: input.maxSteps,

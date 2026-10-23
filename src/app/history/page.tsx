@@ -5,6 +5,7 @@ import { getDictionary, format, formatDateTime } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { listRuns, parseSteps, type RunRow } from "@/lib/db";
 import { EmptyState, PageHeader } from "@/components/ui";
+import { getVisitorId } from "@/lib/visitor";
 
 export default async function Page() {
   const d = getDictionary(await getLocale());
@@ -34,7 +35,7 @@ function statusTone(status: RunRow["status"]): string {
 
 async function RunsList() {
   await connection();
-  const runs = await listRuns();
+  const runs = await listRuns(await getVisitorId());
   const locale = await getLocale();
   const d = getDictionary(locale);
 

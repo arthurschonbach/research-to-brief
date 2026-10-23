@@ -7,6 +7,7 @@ import { hasChatKey } from "@/lib/agent";
 import { loadSampleAction } from "@/lib/actions";
 import { countRuns } from "@/lib/db";
 import { PageHeader, btnSecondary } from "@/components/ui";
+import { getVisitorId } from "@/lib/visitor";
 
 export default async function Page() {
   const d = getDictionary(await getLocale());
@@ -38,7 +39,7 @@ async function SampleSection() {
   const d = getDictionary(await getLocale());
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {(await countRuns()) === 0 && <p className="text-sm text-muted">{d.ask.empty}</p>}
+      {(await countRuns(await getVisitorId())) === 0 && <p className="text-sm text-muted">{d.ask.empty}</p>}
       <form action={loadSampleAction}>
         <button type="submit" className={btnSecondary}>
           {d.ask.sampleButton}

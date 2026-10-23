@@ -13,6 +13,7 @@ import {
   btnDanger,
   btnGhost,
 } from "@/components/ui";
+import { getVisitorId } from "@/lib/visitor";
 
 export const instant = false;
 
@@ -50,7 +51,7 @@ function parseStringArray(value: string): string[] {
 
 export default async function Page({ params }: PageProps<"/history/[id]">) {
   const { id } = await params;
-  const run = await getRun(id);
+  const run = await getRun(await getVisitorId(), id);
 
   const locale = await getLocale();
   const d = getDictionary(locale);

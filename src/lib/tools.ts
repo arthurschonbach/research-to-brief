@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { safeFetch } from "./safe-fetch";
 
 export interface SearchResult {
   title: string;
@@ -263,12 +264,16 @@ export async function fetchPage(raw: string): Promise<FetchedPage> {
   const timer = setTimeout(() => controller.abort(), 15_000);
   let response: Response;
   try {
-    response = await fetch(url, {
+    // Picked URLs come from search results and the model: never let one
+    // reach the host's own network.
+    response = await safeFetch(url, {
       signal: controller.signal,
       headers: { "user-agent": "research-to-brief/0.1" },
-      redirect: "follow",
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && /^(invalid|blocked)-url$/.test(error.message)) {
+      throw error;
+    }
     throw new Error("fetch-failed");
   } finally {
     clearTimeout(timer);
